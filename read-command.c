@@ -37,6 +37,11 @@ boolean is_space(char c)
 	}
 };
 
+/*************** Function Prototypes ***************/
+command_t
+make_command(int (*get_next_byte)(void *), void *fp);
+/***************************************************/
+
 /* Read line from stream into buffer and return its length */
 int
 read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
@@ -106,11 +111,47 @@ categorize_command(char* line, int len)
 	return SIMPLE_COMMAND;
 }
 
+command_t
+make_cmd_aux(char* line_buffer, int len, command_t cmd)
+{
+	cmd->status = -1;
+	char** word_ptr = malloc(sizeof(void*));
+	*word_ptr = malloc(len*sizeof(char));
+	//cmd->u.word = malloc(sizeof(void *));
+	//*(cmd->u.word) =  malloc(len*sizeof(char));
+	int i;
+	for(i = 0; i < len; i++)
+	{
+		// If SEQUENCE_COMMAND
+		if (line_buffer[i] == ';')
+		{
+			//cmd->u.command = malloc(sizeof(struct command)*2);
+			//struct command* two_cmd = cmd->u.command
+			//*((*word_ptr)+i) = '\0';
+			cmd->u.command[0] = malloc(sizeof(struct command));
+			cmd->u.command[0]->status = -1;
+			cmd->u.command[0]->u.word = word_ptr;
+			cmd->u.command[0]->type = SIMPLE_COMMAND;
+
+			cmd->u.command[1] = malloc(sizeof(struct command));
+			make_cmd_aux(line_buffer+i+1,len-i-1,cmd->u.command[1]);
+			//cmd->u.command = two_cmd;	
+			cmd->type = SEQUENCE_COMMAND;
+			return cmd;
+		}
+		*((*word_ptr)+i) = line_buffer[i];
+	}
+	//	free(line_buffer);
+	cmd->u.word = word_ptr;
+	cmd->type = SIMPLE_COMMAND;
+	printf("SIMPLE_COMMAND: %s\n", *word_ptr);
+	return cmd;
+}
 
 command_t
 make_command(int (*get_next_byte)(void *), void *fp)
 {
-	struct command *cmd = malloc(sizeof(command_t));
+	command_t cmd = malloc(sizeof(struct command));
 	char *line_buffer = malloc(sizeof(char)*BUFFER_SIZE);
 	int len = read_line(get_next_byte,fp, line_buffer);
 	if (len < 0) 
@@ -118,17 +159,7 @@ make_command(int (*get_next_byte)(void *), void *fp)
 		free(line_buffer);
 		return NULL;
 	}
-	cmd->type = SIMPLE_COMMAND;
-	cmd->status = -1;
-	cmd->u.word = malloc(sizeof(void *));
-	*(cmd->u.word) =  malloc(len*sizeof(char));
-	int i;
-	for(i = 0; i < len; i++)
-	{
-		*((*(cmd->u.word))+i) = line_buffer[i];
-	}
-	//	free(line_buffer);
-	return cmd;
+	return make_cmd_aux(line_buffer,len,cmd);
 }
 
 command_stream_t
