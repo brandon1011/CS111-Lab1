@@ -88,55 +88,53 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 	return len;
 }
 
-/* Given string determine command type and if command is complete */
+/* Given position i determine if current command 
+	is AND, OR, PIPE or SEQUENCE or Neither*/
+inline
 enum command_type
-categorize_command(char* line, int len) 
+categorize_cmd(char* line, int pos, int len) 
 {
-	int i;
-	for (i = 0; i < len-1; ++i)
+	if (line[pos] == ';')
+		return SEQUENCE_COMMAND;
+	if (line[pos] == '&' && pos < len-1 && line[pos+1] == '&')
+		return AND_COMMAND;
+	if (line[pos] == '|')
 	{
-		if (line[i] == '(')
-			return SUBSHELL_COMMAND;
-		if (line[i] == ';')
-			return SEQUENCE_COMMAND;
-		if (line[i] == '&' && line[i+1] == '&')
-			return AND_COMMAND;
-		if (line[i] == '|')
-		{
-			if (line[i+1] == '|')
+		if(pos < len-1 && line[pos+1] == '|')
 				return OR_COMMAND;
-			return PIPE_COMMAND;
-		}
+		else return PIPE_COMMAND;
 	}
 	return SIMPLE_COMMAND;
 }
 
+/*	Helper function for make_command given line_buffer */
 command_t
 make_cmd_aux(char* line_buffer, int len, command_t cmd)
 {
-	cmd->status = -1;
-	char** word_ptr = malloc(sizeof(void*));
-	*word_ptr = malloc(len*sizeof(char));
-	//cmd->u.word = malloc(sizeof(void *));
-	//*(cmd->u.word) =  malloc(len*sizeof(char));
 	int i;
+	char** word_ptr = malloc(sizeof(void*));
+	enum command_type type;
+
+	*word_ptr = malloc(len*sizeof(char));
+	cmd->status = -1;
+
 	for(i = 0; i < len; i++)
 	{
 		// If SEQUENCE_COMMAND
-		if (line_buffer[i] == ';')
+		if ((type = categorize_cmd(line_buffer, i, len)) != SIMPLE_COMMAND)
 		{
-			//cmd->u.command = malloc(sizeof(struct command)*2);
-			//struct command* two_cmd = cmd->u.command
-			//*((*word_ptr)+i) = '\0';
+			// First cmd is SIMPLE_COMMAND
 			cmd->u.command[0] = malloc(sizeof(struct command));
 			cmd->u.command[0]->status = -1;
 			cmd->u.command[0]->u.word = word_ptr;
 			cmd->u.command[0]->type = SIMPLE_COMMAND;
-
+			// Form second cmd recursively
 			cmd->u.command[1] = malloc(sizeof(struct command));
-			make_cmd_aux(line_buffer+i+1,len-i-1,cmd->u.command[1]);
-			//cmd->u.command = two_cmd;	
-			cmd->type = SEQUENCE_COMMAND;
+			if (type==AND_COMMAND || type==OR_COMMAND)
+				make_cmd_aux(line_buffer+i+2,len-i-2,cmd->u.command[1]);
+			else
+				make_cmd_aux(line_buffer+i+1,len-i-1,cmd->u.command[1]);
+			cmd->type = type;
 			return cmd;
 		}
 		*((*word_ptr)+i) = line_buffer[i];
