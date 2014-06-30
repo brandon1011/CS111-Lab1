@@ -8,9 +8,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #define BUFFER_SIZE 1024
-//make_command_stream (int (*get_next_byte) (void *),
-//		     void *get_next_byte_argument)
-//
+
+typedef enum
+{
+	TRUE,
+	FALSE,
+} boolean;
+
 /* FIXME: Define the type 'struct command_stream' here.  This should
    complete the incomplete type declaration in command.h.  */
 struct command_stream
@@ -18,24 +22,91 @@ struct command_stream
 	command_t 			cmd;
 	struct command_stream* nxt;
 };
+/* Determine if character is a special character */
+
+boolean is_space(char c)
+{
+	switch(c)
+	{
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\v':
+		case	'\f': return TRUE;
+		default: return FALSE;
+	}
+};
 
 /* Read line from stream into buffer and return its length */
 int
 read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 {
 	int len = 0;
+	boolean expected_word = FALSE;
+	boolean term_set = FALSE;
+	char term = '\n';
 	char c;
-	while((c = (*get_next_byte)(fp)) != '\n')
+
+	while((c = (*get_next_byte)(fp)) != term || expected_word == TRUE)
 	{
 		if (c < 0)
-		{
 			return -1;
+
+		if (c == '\n')
+			continue;
+
+		if (term_set == FALSE) 
+			if (c == '(')
+			{
+				term = ')';
+				term_set = TRUE;
+			}
+
+		if (expected_word == TRUE) 
+			if (is_space(c) == FALSE && c != ';' && c != '|' && c != '&')
+				expected_word = FALSE;
+
+		if (c == '&' || c== '|' || c == ';')
+		{
+			term_set = TRUE;
+			expected_word = TRUE;
 		}
-		line_buffer[len] = c;		
+
+		line_buffer[len] = c;
 		len++;
-	}	
+	}
+	if (term == ')')
+	{
+		line_buffer[len] = term;
+		len++;
+	}
 	return len;
 }
+
+/* Given string determine command type and if command is complete */
+enum command_type
+categorize_command(char* line, int len) 
+{
+	int i;
+	for (i = 0; i < len-1; ++i)
+	{
+		if (line[i] == '(')
+			return SUBSHELL_COMMAND;
+		if (line[i] == ';')
+			return SEQUENCE_COMMAND;
+		if (line[i] == '&' && line[i+1] == '&')
+			return AND_COMMAND;
+		if (line[i] == '|')
+		{
+			if (line[i+1] == '|')
+				return OR_COMMAND;
+			return PIPE_COMMAND;
+		}
+	}
+	return SIMPLE_COMMAND;
+}
+
+
 command_t
 make_command(int (*get_next_byte)(void *), void *fp)
 {
@@ -56,7 +127,7 @@ make_command(int (*get_next_byte)(void *), void *fp)
 	{
 		*((*(cmd->u.word))+i) = line_buffer[i];
 	}
-//	free(line_buffer);
+	//	free(line_buffer);
 	return cmd;
 }
 
