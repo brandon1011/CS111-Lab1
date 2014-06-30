@@ -17,10 +17,15 @@ typedef enum
 
 /* FIXME: Define the type 'struct command_stream' here.  This should
    complete the incomplete type declaration in command.h.  */
+struct command_node
+{
+	command_t 						cmd;
+	struct command_node* 	nxt;
+};
+
 struct command_stream
 {
-	command_t 			cmd;
-	struct command_stream* nxt;
+	struct command_node* list;
 };
 /* Determine if character is a special character */
 
@@ -43,12 +48,15 @@ make_command(int (*get_next_byte)(void *), void *fp);
 /***************************************************/
 
 /* Read line from stream into buffer and return its length */
+// TODO Add check for first char, if first char is whitespace
+// 
 int
 read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 {
 	int len = 0;
 	boolean expected_word = FALSE;
 	boolean term_set = FALSE;
+	boolean first_char = FALSE;
 	char term = '\n';
 	char c;
 
@@ -56,7 +64,7 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 	{
 		if (c < 0)
 			return -1;
-
+		
 		if (c == '\n')
 			continue;
 
@@ -84,6 +92,7 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 	{
 		line_buffer[len] = term;
 		len++;
+		while((c = (*get_next_byte)(fp)) != '\n');
 	}
 	return len;
 }
@@ -139,10 +148,9 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 		}
 		*((*word_ptr)+i) = line_buffer[i];
 	}
-	//	free(line_buffer);
 	cmd->u.word = word_ptr;
 	cmd->type = SIMPLE_COMMAND;
-	printf("SIMPLE_COMMAND: %s\n", *word_ptr);
+	//free(line_buffer);
 	return cmd;
 }
 
@@ -168,10 +176,15 @@ make_command_stream (int (*get_next_byte) (void *),
      add auxiliary functions and otherwise modify the source code.
      You can also use external functions defined in the GNU C Library.  */
 	command_stream_t stream = malloc(sizeof(struct command_stream));
- 	if ((stream->cmd = make_command(get_next_byte,
+	stream->list = malloc(sizeof(struct command_node));
+	struct command_node* walk = stream->list;
+ 	//if ((stream->cmd = make_command(get_next_byte,
+ 	while ((walk->cmd = make_command(get_next_byte,
 				get_next_byte_argument)) != NULL) 
 	{
-			stream->nxt=NULL;
+			//stream->nxt=NULL;
+			walk->nxt = malloc(sizeof(struct command_node));
+			walk = walk->nxt;
 	}
 	//error (1, 0, "command make command stream not yet implemented");
   return stream;
@@ -180,8 +193,9 @@ make_command_stream (int (*get_next_byte) (void *),
 command_t
 read_command_stream (command_stream_t s)
 {
-	command_t cmd = s->cmd;
-	s->cmd = NULL;
+	command_t cmd = s->list->cmd;
+	if (s->list != NULL)
+		s->list = s->list->nxt;
   /* FIXME: Replace this with your implementation too.  */
   //error (1, 0, "command reading not yet implemented");
   return cmd;
