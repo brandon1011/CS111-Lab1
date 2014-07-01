@@ -2,13 +2,18 @@
 #include "command.h"
 #include "command-internals.h"
 #include <error.h>
-
+/* TODO: 	1. Implement I/O Redirects
+					2. Generalize word construction
+					3. Implement subshell command
+					4. Check for syntax error
+*/
 /* FIXME: You may need to add #include directives, macro definitions,
    static function definitions, etc.  */
 #include <stdlib.h>
 #include <stdio.h>
 #define BUFFER_SIZE 1024
-
+#define WORD_COUNT 	10
+#define WORD_SIZE		32
 typedef enum
 {
 	TRUE,
@@ -27,8 +32,8 @@ struct command_stream
 {
 	struct command_node* list;
 };
-/* Determine if character is a special character */
 
+/* Determine if character is white space */
 boolean is_space(char c)
 {
 	switch(c)
@@ -41,11 +46,6 @@ boolean is_space(char c)
 		default: return FALSE;
 	}
 };
-
-/*************** Function Prototypes ***************/
-command_t
-make_command(int (*get_next_byte)(void *), void *fp);
-/***************************************************/
 
 /* Read line from stream into buffer and return its length */
 // TODO Add check for first char, if first char is whitespace
@@ -64,7 +64,6 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 	{
 		if (c < 0)
 			return -1;
-		
 		if (c == '\n')
 			continue;
 
@@ -74,7 +73,6 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 				term = ')';
 				term_set = TRUE;
 			}
-
 		if (expected_word == TRUE) 
 			if (is_space(c) == FALSE && c != ';' && c != '|' && c != '&')
 				expected_word = FALSE;
@@ -98,7 +96,7 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 }
 
 /* Given position i determine if current command 
-	is AND, OR, PIPE or SEQUENCE or Neither*/
+	is AND, OR, PIPE or SEQUENCE or None*/
 inline
 enum command_type
 categorize_cmd(char* line, int pos, int len) 
@@ -115,21 +113,38 @@ categorize_cmd(char* line, int pos, int len)
 	}
 	return SIMPLE_COMMAND;
 }
+/*
+inline
+int
+make_word(char* line_buffer, int len, int pos, char* word)
+{
+	int i=0;
+	while (pos < len && is_space(line_buffer[pos]) == FALSE)
+	{
+		word[i] = line_buffer[pos];
+		pos++;
+		i++;
+	}	
+	return pos;
+}*/
 
-/*	Helper function for make_command given line_buffer */
+/* Helper function for make_command given line_buffer */
 command_t
 make_cmd_aux(char* line_buffer, int len, command_t cmd)
 {
-	int i;
-	char** word_ptr = malloc(sizeof(void*));
+	int i, word_count = 0, running_count = 0;
+	char c;
+	char** word_ptr = malloc(sizeof(void*)*WORD_COUNT);
 	enum command_type type;
-
-	*word_ptr = malloc(len*sizeof(char));
+	boolean is_word = FALSE;
+	
+	for (i=0; i<WORD_COUNT; i++)
+		word_ptr[i] = malloc(WORD_SIZE*sizeof(char));
 	cmd->status = -1;
 
 	for(i = 0; i < len; i++)
 	{
-		// If SEQUENCE_COMMAND
+		// If {SEQUENCE, OR, AND, PIPE}_COMMAND
 		if ((type = categorize_cmd(line_buffer, i, len)) != SIMPLE_COMMAND)
 		{
 			// First cmd is SIMPLE_COMMAND
@@ -146,11 +161,26 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 			cmd->type = type;
 			return cmd;
 		}
-		*((*word_ptr)+i) = line_buffer[i];
+		if (is_space(c=line_buffer[i]) == TRUE)
+		{
+			if(is_word == TRUE && word_count < WORD_COUNT)
+			{
+				is_word = FALSE;
+				running_count = 0;
+				word_count++;
+			}
+			continue;
+		}
+		else 
+		{
+			*((word_ptr[word_count])+running_count) = line_buffer[i];
+			is_word = TRUE;
+			running_count++;
+		}
 	}
+	//free(word_ptr+word_count+2);
 	cmd->u.word = word_ptr;
 	cmd->type = SIMPLE_COMMAND;
-	//free(line_buffer);
 	return cmd;
 }
 
@@ -178,11 +208,10 @@ make_command_stream (int (*get_next_byte) (void *),
 	command_stream_t stream = malloc(sizeof(struct command_stream));
 	stream->list = malloc(sizeof(struct command_node));
 	struct command_node* walk = stream->list;
- 	//if ((stream->cmd = make_command(get_next_byte,
+
  	while ((walk->cmd = make_command(get_next_byte,
 				get_next_byte_argument)) != NULL) 
 	{
-			//stream->nxt=NULL;
 			walk->nxt = malloc(sizeof(struct command_node));
 			walk = walk->nxt;
 	}
@@ -194,9 +223,11 @@ command_t
 read_command_stream (command_stream_t s)
 {
 	command_t cmd = s->list->cmd;
+	struct command_node* temp = s->list;
 	if (s->list != NULL)
 		s->list = s->list->nxt;
   /* FIXME: Replace this with your implementation too.  */
   //error (1, 0, "command reading not yet implemented");
+	free(temp);
   return cmd;
 }
