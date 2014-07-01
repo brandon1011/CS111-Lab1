@@ -112,6 +112,28 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 	return len;
 }
 
+int
+count_words(char* line_buffer, int len)
+{
+	int i=0, num=0;
+	char c;
+	while (i < len)
+	{
+		while(i < len && is_space(c=line_buffer[i]) == TRUE
+						&& is_special(c) == FALSE)
+			i++;
+		if (i < len && is_special(c) == FALSE)
+			num++;
+		while(i < len && is_space(c=line_buffer[i]) == FALSE
+						&& is_special(c) == FALSE)
+			i++;
+		if(is_special(c) == TRUE)
+		{
+			break;
+		}
+	}
+	return num;
+}
 /* Given position i determine if current command 
 	is AND, OR, PIPE or SEQUENCE or None*/
 inline
@@ -154,11 +176,15 @@ command_t
 make_cmd_aux(char* line_buffer, int len, command_t cmd)
 {
 	int i, word_count = 0;
+	//int num_words = count_words(line_buffer, len);
+	int num_words = WORD_COUNT;
 	char c;
-	char** word_ptr = malloc(sizeof(void*)*WORD_COUNT);
+	char** word_ptr = malloc(sizeof(void*)*num_words);
 	enum command_type type;
 	
-	for (i=0; i<WORD_COUNT; i++)
+	//printf("Num words: %d\n", num_words);
+
+	for (i=0; i<num_words; i++)
 		word_ptr[i] = malloc(WORD_SIZE*sizeof(char));
 	cmd->status = -1;
 
@@ -170,10 +196,23 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 		i = make_word(line_buffer, len, i, word_ptr[word_count]);
 		word_count++;
 
+		if ((c=line_buffer[i]) == '<')	// Detect Input redirect
+		{
+			cmd->input = malloc(WORD_SIZE*sizeof(char));
+			i++;
+			while(is_space(line_buffer[i]) == TRUE)
+				i++;
+			i = make_word(line_buffer, len, i, cmd->input);
+		}
+
 		if ((c=line_buffer[i]) == '>')	// Detect Output redirect
 		{
+			/* FIXME: BUG if space after > */
 			cmd->output = malloc(WORD_SIZE*sizeof(char));
-			i = make_word(line_buffer, len, i+1, cmd->output);
+			i++;
+			while(is_space(line_buffer[i]) == TRUE)
+				i++;
+			i = make_word(line_buffer, len, i, cmd->output);
 		}
 
 		// If {SEQUENCE, OR, AND, PIPE}_COMMAND
