@@ -2,10 +2,11 @@
 #include "command.h"
 #include "command-internals.h"
 #include <error.h>
-/* TODO: 	1. Implement I/O Redirects
-					2. Generalize word construction
+/* TODO: 	1. Implement I/O Redirects			X
+					2. Generalize word construction X
 					3. Implement subshell command
 					4. Check for syntax error
+					5. Fix dynamic number of words
 */
 /* FIXME: You may need to add #include directives, macro definitions,
    static function definitions, etc.  */
@@ -34,7 +35,9 @@ struct command_stream
 };
 
 /* Determine if character is white space */
-boolean is_space(char c)
+inline
+boolean 
+is_space(char c)
 {
 	switch(c)
 	{
@@ -46,7 +49,21 @@ boolean is_space(char c)
 		default: return FALSE;
 	}
 };
-
+inline
+boolean
+is_special(char c)
+{
+	switch(c)
+	{
+		case ';':
+		case '|':
+		case '&':
+		case '<':
+		case '>':
+			return TRUE;
+		default: return FALSE;
+	}
+};
 /* Read line from stream into buffer and return its length */
 // TODO Add check for first char, if first char is whitespace
 // 
@@ -113,30 +130,33 @@ categorize_cmd(char* line, int pos, int len)
 	}
 	return SIMPLE_COMMAND;
 }
-/*
+
+/* Generate word from line_buffer copy non-white space into word */
 inline
 int
 make_word(char* line_buffer, int len, int pos, char* word)
 {
 	int i=0;
-	while (pos < len && is_space(line_buffer[pos]) == FALSE)
+	char c;
+	while ((pos<len) && (is_space(c=line_buffer[pos])==FALSE)
+					&& is_special(c) == FALSE)
 	{
 		word[i] = line_buffer[pos];
 		pos++;
 		i++;
 	}	
-	return pos;
-}*/
+	word[i] = '\0';
+	return pos;		// Track current position in the line_buffer
+}
 
 /* Helper function for make_command given line_buffer */
 command_t
 make_cmd_aux(char* line_buffer, int len, command_t cmd)
 {
-	int i, word_count = 0, running_count = 0;
+	int i, word_count = 0;
 	char c;
 	char** word_ptr = malloc(sizeof(void*)*WORD_COUNT);
 	enum command_type type;
-	boolean is_word = FALSE;
 	
 	for (i=0; i<WORD_COUNT; i++)
 		word_ptr[i] = malloc(WORD_SIZE*sizeof(char));
@@ -144,6 +164,18 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 
 	for(i = 0; i < len; i++)
 	{
+		if (is_space(line_buffer[i]) == TRUE)
+			continue;
+
+		i = make_word(line_buffer, len, i, word_ptr[word_count]);
+		word_count++;
+
+		if ((c=line_buffer[i]) == '>')	// Detect Output redirect
+		{
+			cmd->output = malloc(WORD_SIZE*sizeof(char));
+			i = make_word(line_buffer, len, i+1, cmd->output);
+		}
+
 		// If {SEQUENCE, OR, AND, PIPE}_COMMAND
 		if ((type = categorize_cmd(line_buffer, i, len)) != SIMPLE_COMMAND)
 		{
@@ -160,22 +192,6 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 				make_cmd_aux(line_buffer+i+1,len-i-1,cmd->u.command[1]);
 			cmd->type = type;
 			return cmd;
-		}
-		if (is_space(c=line_buffer[i]) == TRUE)
-		{
-			if(is_word == TRUE && word_count < WORD_COUNT)
-			{
-				is_word = FALSE;
-				running_count = 0;
-				word_count++;
-			}
-			continue;
-		}
-		else 
-		{
-			*((word_ptr[word_count])+running_count) = line_buffer[i];
-			is_word = TRUE;
-			running_count++;
 		}
 	}
 	//free(word_ptr+word_count+2);
