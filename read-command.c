@@ -2,18 +2,15 @@
 #include "command.h"
 #include "command-internals.h"
 #include <error.h>
-/* TODO: 	1. Implement subshell command
-					2. check syntax errors
-					3. Fix dynamic word bug- makes 1 less word for sequence cmds
-					4. Ignore # comments
-					5. Fix bug for I/O redirect in SEQUENCE_CMD---FIXED-verify
-		FIXME: Bug in Sequence CMD for dynamic # words
-		Why does dynamically counting num_words cause seg fault for 
-		words beginning in - e.g. ls -a or 2 words with "" ie "Hello World"
+/* TODO: 	
+					1. check syntax errors
+					2. Ignore # comments
+					3. Allow for >> and <<
+					4. Fix | bug for a<b>c|d<e>f|g<h>i 
 */
 #include <stdlib.h>
 #include <stdio.h>
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 1024
 #define WORD_COUNT 	10
 #define WORD_SIZE		100
 typedef enum
@@ -78,8 +75,13 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 	boolean first_char = FALSE;
 	char term = '\n';
 	char c;
-
-	while(((c = (*get_next_byte)(fp)) != term || expected_word == TRUE)
+	while(is_space(c=(*get_next_byte)(fp)) == TRUE && (c>=0));
+	if (c == '#')
+	{
+		while((c=(*get_next_byte)(fp)) != '\n');
+		return read_line(get_next_byte, fp, line_buffer);
+	}
+	while((c != term || expected_word == TRUE)
 				&& (len < BUFFER_SIZE))
 	{
 		if (c < 0)
@@ -103,6 +105,8 @@ read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 
 		line_buffer[len] = c;
 		len++;
+
+		c = (*get_next_byte)(fp);
 	}
 	if (term == ')')
 	{
@@ -168,26 +172,28 @@ make_word(char* line_buffer, int len, int pos, char* word)
 	while ((pos<len) && (is_space(c=line_buffer[pos])==FALSE)
 					&& is_special(c) == FALSE)
 	{
+		if (i > WORD_SIZE)
+			return pos;
 		word[i] = line_buffer[pos];
 		pos++;
 		i++;
 	}	
+	//if (i ==0)
+		//return -1;
 	return pos;		// Track current position in the line_buffer
 }
 
 /* Helper function for make_command given line_buffer */
-command_t
+void
 make_cmd_aux(char* line_buffer, int len, command_t cmd)
 {
 	int i, word_count = 0;
-	printf("First char = %c ", line_buffer[0]);
 	int num_words = count_words(line_buffer, len);
 	//int num_words = WORD_COUNT;
 	char c;
 	char** word_ptr = malloc((num_words+1)*sizeof(void*));
 	enum command_type type;
 	
-	printf("Num words: %d\n", num_words);
 	for (i=0; i<num_words; i++)
 		word_ptr[i] = malloc(WORD_SIZE*sizeof(char));
 	cmd->status = -1;
@@ -198,25 +204,35 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 			continue;
 
 		i = make_word(line_buffer, len, i, word_ptr[word_count]);
-		//printf("WORD %s\n", word_ptr[word_count]);
+		if (i >= len)
+			break;
 		word_count++;
 
 		/* Detect I/O redirects */
 		if ((c=line_buffer[i]) == '<')	// Detect Input redirect
 		{
+			if (i < len-1 && line_buffer[i+1] == '<')
+				i++;
 			cmd->input = malloc(WORD_SIZE*sizeof(char));
 			i++;
 			while(is_space(line_buffer[i]) == TRUE)
 				i++;
+
 			i = make_word(line_buffer, len, i, cmd->input);
+			if (i >= len)
+				break;
 		}
 		if ((c=line_buffer[i]) == '>')	// Detect Output redirect
 		{
+			if (i < len-1 && line_buffer[i+1] == '>')
+				i++;
 			cmd->output = malloc(WORD_SIZE*sizeof(char));
 			i++;
 			while(is_space(line_buffer[i]) == TRUE)
 				i++;
 			i = make_word(line_buffer, len, i, cmd->output);
+			if (i >= len)
+				break;
 		}
 
 		/* If {SEQUENCE, OR, AND, PIPE}_COMMAND */
@@ -234,25 +250,26 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 			cmd->output = NULL;
 			// Form second cmd recursively
 			cmd->u.command[1] = malloc(sizeof(struct command));
+			cmd->u.command[1]->status = -1;
 			if (type==AND_COMMAND || type==OR_COMMAND)
 				make_cmd_aux(line_buffer+i+2,len-i-2,cmd->u.command[1]);
-			else
+			else if (type==PIPE_COMMAND || type == SEQUENCE_COMMAND)
 				make_cmd_aux(line_buffer+i+1,len-i-1,cmd->u.command[1]);
 			cmd->type = type;
-			return cmd;
+			return;
 		}
 		else if (type == SUBSHELL_COMMAND)
 		{
 			cmd->u.subshell_command = malloc(sizeof(struct command));
 			make_cmd_aux(line_buffer+i+1,len-1, cmd->u.subshell_command);
 			cmd->type = type;
-			return cmd;
+			return;
 		}
 			
 	}
 	cmd->u.word = word_ptr;
 	cmd->type = SIMPLE_COMMAND;
-	return cmd;
+	return;
 }
 
 command_t
@@ -265,7 +282,8 @@ make_command(int (*get_next_byte)(void *), void *fp, char *line_buffer)
 		free(line_buffer);
 		return NULL;
 	}
-	return make_cmd_aux(line_buffer,len,cmd);
+	make_cmd_aux(line_buffer,len,cmd);
+	return cmd;
 }
 /* Make a command stream given file handler */
 command_stream_t
@@ -273,7 +291,7 @@ make_command_stream (int (*get_next_byte) (void *),
 		     void *get_next_byte_argument)
 {
 	int num_cmds = 0;
-	char *line_buffer = malloc(sizeof(char)*BUFFER_SIZE);
+	char *line_buffer = malloc(BUFFER_SIZE);
 	command_stream_t stream = malloc(sizeof(struct command_stream));
 	stream->list = malloc(sizeof(struct command_node));
 	struct command_node* walk = stream->list;
