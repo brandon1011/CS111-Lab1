@@ -4,9 +4,7 @@
 #include <error.h>
 /* TODO: 	
 					1. check syntax errors
-					2. Ignore # comments
-					3. Allow for >> and <<
-					4. Fix | bug for a<b>c|d<e>f|g<h>i 
+					2. syntax error when sequence, and or, etc followed by single word
 */
 #include <stdlib.h>
 #include <stdio.h>
@@ -63,6 +61,16 @@ is_special(char c)
 		default: return FALSE;
 	}
 };
+
+inline
+void
+syntax_chk(int retval, int line)
+{
+	if (retval < 0)
+		error (1, 0, "Error at line:%d\n", line);
+		//printf("Error at line: %d\n",line);
+}
+
 /* Read line from stream into buffer and return its length */
 // TODO Add check for first char, if first char is whitespace
 int
@@ -176,24 +184,25 @@ make_word(char* line_buffer, int len, int pos, char* word)
 			return pos;
 		word[i] = line_buffer[pos];
 		pos++;
-		i++;
+		++i;
 	}	
-	//if (i ==0)
-		//return -1;
+	if (i ==0)
+		return -1;
 	return pos;		// Track current position in the line_buffer
 }
 
 /* Helper function for make_command given line_buffer */
-void
-make_cmd_aux(char* line_buffer, int len, command_t cmd)
+int
+make_cmd_aux(char* line_buffer, int len, command_t cmd, int cmd_num)
 {
+	/* Returns number of words in cmd if type == SIMPLE_COMMAND*/
 	int i, word_count = 0;
 	int num_words = count_words(line_buffer, len);
 	//int num_words = WORD_COUNT;
 	char c;
 	char** word_ptr = malloc((num_words+1)*sizeof(void*));
 	enum command_type type;
-	
+
 	for (i=0; i<num_words; i++)
 		word_ptr[i] = malloc(WORD_SIZE*sizeof(char));
 	cmd->status = -1;
@@ -203,10 +212,12 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 		if (is_space(line_buffer[i]) == TRUE)
 			continue;
 
-		i = make_word(line_buffer, len, i, word_ptr[word_count]);
+		if (word_count < num_words)
+			i = make_word(line_buffer, len, i,word_ptr[word_count]);
+
+		word_count++;
 		if (i >= len)
 			break;
-		word_count++;
 
 		/* Detect I/O redirects */
 		if ((c=line_buffer[i]) == '<')	// Detect Input redirect
@@ -218,7 +229,7 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 			while(is_space(line_buffer[i]) == TRUE)
 				i++;
 
-			i = make_word(line_buffer, len, i, cmd->input);
+			syntax_chk((i = make_word(line_buffer, len, i, cmd->input)),cmd_num);
 			if (i >= len)
 				break;
 		}
@@ -230,7 +241,7 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 			i++;
 			while(is_space(line_buffer[i]) == TRUE)
 				i++;
-			i = make_word(line_buffer, len, i, cmd->output);
+			syntax_chk((i = make_word(line_buffer, len, i, cmd->output)),cmd_num);
 			if (i >= len)
 				break;
 		}
@@ -252,28 +263,34 @@ make_cmd_aux(char* line_buffer, int len, command_t cmd)
 			cmd->u.command[1] = malloc(sizeof(struct command));
 			cmd->u.command[1]->status = -1;
 			if (type==AND_COMMAND || type==OR_COMMAND)
-				make_cmd_aux(line_buffer+i+2,len-i-2,cmd->u.command[1]);
+				syntax_chk((make_cmd_aux(line_buffer+i+2,
+						len-i-2,cmd->u.command[1], cmd_num)),cmd_num-100);
+
 			else if (type==PIPE_COMMAND || type == SEQUENCE_COMMAND)
-				make_cmd_aux(line_buffer+i+1,len-i-1,cmd->u.command[1]);
+				syntax_chk((make_cmd_aux(line_buffer+i+1,
+					len-i-1,cmd->u.command[1],cmd_num)),cmd_num-100);
+
 			cmd->type = type;
-			return;
+			return 0;
 		}
 		else if (type == SUBSHELL_COMMAND)
 		{
 			cmd->u.subshell_command = malloc(sizeof(struct command));
-			make_cmd_aux(line_buffer+i+1,len-1, cmd->u.subshell_command);
+			make_cmd_aux(line_buffer+i+1,len-1, cmd->u.subshell_command, cmd_num);
 			cmd->type = type;
-			return;
+			return 0;
 		}
 			
 	}
 	cmd->u.word = word_ptr;
 	cmd->type = SIMPLE_COMMAND;
-	return;
+	if (word_count == 0)
+		return -1;
+	return word_count;
 }
 
 command_t
-make_command(int (*get_next_byte)(void *), void *fp, char *line_buffer)
+make_command(int (*get_next_byte)(void *), void *fp, char *line_buffer, int cmd_num)
 {
 	command_t cmd = malloc(sizeof(struct command));
 	int len = read_line(get_next_byte,fp, line_buffer);
@@ -282,7 +299,7 @@ make_command(int (*get_next_byte)(void *), void *fp, char *line_buffer)
 		free(line_buffer);
 		return NULL;
 	}
-	make_cmd_aux(line_buffer,len,cmd);
+	make_cmd_aux(line_buffer,len,cmd, cmd_num);
 	return cmd;
 }
 /* Make a command stream given file handler */
@@ -297,7 +314,7 @@ make_command_stream (int (*get_next_byte) (void *),
 	struct command_node* walk = stream->list;
 
  	while ((walk->cmd = make_command(get_next_byte,
-				get_next_byte_argument, line_buffer)) != NULL) 
+				get_next_byte_argument, line_buffer, num_cmds+1)) != NULL) 
 	{
 			walk->nxt = malloc(sizeof(struct command_node));
 			walk = walk->nxt;
