@@ -8,6 +8,8 @@
 */
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include "alloc.h"
 #define BUFFER_SIZE 1024
 #define WORD_COUNT 	10
 #define WORD_SIZE		100
@@ -16,6 +18,26 @@ typedef enum
 	TRUE,
 	FALSE,
 } boolean;
+
+typedef enum
+{
+	WORD,				// A word not including whitespace or other token
+	OPAREN,			// Left paren  (
+	CPAREN,			// Right paren )
+	AND,				// &&
+	OR,					// ||
+	PIPE,				// |
+	SEMI,				// ;
+	IN,					// <
+	OUT,				// >
+	INVALID,		// Invalid token (e.g. <<<)
+} token_type;
+
+typedef struct
+{
+	token_type type;
+	char* word;
+} token;
 
 struct command_node
 {
@@ -63,6 +85,228 @@ is_special(char c)
 };
 
 inline
+token_type
+get_token_type(char* line_buffer, int pos, int len)
+{
+	char c = line_buffer[pos];	
+
+	if (c=='(')
+		return OPAREN;
+	if (c==')')
+		return CPAREN;
+  if (c==';')
+		return SEMI;
+	if (c=='<')
+		return IN;
+	if (c=='>')
+		return OUT;
+	if (c=='&')
+	{
+		if(pos<len-1 && line_buffer[pos+1] == '&')
+			return AND;
+		else return INVALID;		// Invalid if single &
+	}
+	if (c == '|')
+	{
+		if (pos<len-1 && line_buffer[pos+1] == '|')
+			return OR;
+		else return PIPE;
+	}
+	return INVALID;
+}
+
+int
+get_token(char* line_buffer, int len, int pos, token* t)
+{
+	char c;
+	//int pos = 0;
+	int word_len = 0;
+
+	while((pos<len) && is_space(c=line_buffer[pos])==TRUE)
+		++pos;
+
+	if ((pos<len) && is_special(c) == FALSE)	// if it is a word token
+	{
+		t->type = WORD;
+		t->word = malloc(WORD_SIZE);
+
+		//t->word[0] = c;
+		while (pos<len && is_space(c=line_buffer[pos]) == FALSE  
+						&& is_special(c) == FALSE && word_len < WORD_SIZE)
+		{
+			t->word[word_len] = c;
+			word_len++;
+			pos++;
+		}
+	}
+	else	// if it is a special token
+	{
+		switch((t->type = get_token_type(line_buffer, pos, len)))
+		{
+			case AND:
+			case OR:
+				pos++;
+			default: pos++;
+		}
+	}
+	if (t->type == IN || t->type == OUT)
+		if (line_buffer[pos-1] == line_buffer[pos])
+			pos++;
+	return pos;
+}
+
+/* 	Read a single line terminated by \n or EOF from file 
+		RETURN len of line_buffer */
+int
+get_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
+{
+	char c;
+	int len=0;
+	c=(*get_next_byte)(fp);
+	while((len<BUFFER_SIZE) && c != '\n' && (c>0)) 
+	{
+		line_buffer[len] = c;	
+		len++;
+		c=(*get_next_byte)(fp);
+	}
+	if (len >= BUFFER_SIZE)
+		error(1,0, "Buffer Overflow");
+	return len;
+}
+
+int count_words(char* line_buffer, int len);
+
+int
+make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
+								int len, command_t cmd, int flag)
+{
+	boolean done = FALSE;	// Signifies incomplete cmd
+	token* t = malloc(sizeof(token));
+	int word_count, wnum=0, i=0;
+	char** word_ptr;
+	
+	cmd->status = -1;
+	cmd->input = NULL;
+	cmd->output = NULL;
+	cmd->type = SIMPLE_COMMAND;
+
+	while(done == FALSE)
+	{
+
+		word_count = count_words(line_buffer, len);	
+
+		if (word_count > 0)
+		{
+			word_ptr = malloc((word_count+1)*sizeof(void*));	
+			for (i=0; i<word_count; ++i)
+				word_ptr[i] = malloc(WORD_SIZE);
+			cmd->u.word = word_ptr;
+		}
+		i =0;
+		while(i < len)	// while current line is not done
+		{
+			// if only word tokens, iterate til end of line
+			// and create normal token
+			
+			done = TRUE;
+			i = get_token(line_buffer, len, i, t);
+			token_type type = t->type;	
+			if(t->type == WORD)
+			{
+				memcpy(word_ptr[wnum], t->word, WORD_SIZE);
+				free(t->word);
+				wnum++;
+			}
+			// if {AND, OR, PIPE, SEQUENCE}_COMMAND
+			else if ((type==AND) || (t->type==OR) || (t->type==PIPE)
+					|| (type == SEMI))
+			{
+				cmd->u.command[0] = malloc(sizeof(struct command));
+				cmd->u.command[1] = malloc(sizeof(struct command));
+				memcpy(cmd->u.command[0], cmd, sizeof(struct command));
+				cmd->u.command[0]->u.word = word_ptr;
+				cmd->input = NULL;
+				cmd->output = NULL;
+				switch(type)
+				{
+					case AND:
+						cmd->type = AND_COMMAND;
+						break;
+					case OR:
+						cmd->type = OR_COMMAND;
+						break;
+					case PIPE:
+						cmd->type = PIPE_COMMAND;
+						break;
+					case SEMI:
+						cmd->type = SEQUENCE_COMMAND;
+						break;
+					default:;
+				}
+
+				i += make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
+							 len-i, cmd->u.command[1], 1);	
+			}
+			else if (type== IN)
+			{
+				if (cmd->input != NULL)
+					error(1,0, "multiple input redirect");
+				word_count = count_words(line_buffer+i, len-i);
+				if (word_count > 1)
+					error(1,0, "multiple symbols after <");
+				else if (word_count < 1)
+					error(1,0, "no symbols after <");
+				i = get_token(line_buffer, len, i, t);
+				cmd->input = malloc(WORD_SIZE);
+				memcpy(cmd->input, t->word, WORD_SIZE);
+			
+			}
+			else if (type == OUT)
+			{
+				if (cmd->output != NULL)
+					error(1,0, "multiple output redirect");
+				word_count = count_words(line_buffer+i, len-i);
+				if (word_count > 1)
+					error(1,0, "multiple symbols after >");
+				else if (word_count < 1)
+					error(1,0, "no symbols after >");
+				i = get_token(line_buffer, len, i, t);
+				cmd->output = malloc(WORD_SIZE);
+				memcpy(cmd->output, t->word, WORD_SIZE);
+				
+			}
+		}	
+		// When the current line buffer is complete and more is needed
+		if ((i >= len) && (done == FALSE))
+		{
+			// Get a new line_buffer and reset i
+			len = get_line(get_next_byte, fp, line_buffer);
+			i = 0;
+			if (len == 0 && flag == 0)
+				return -1;
+			else if (len == 0 && flag == 1)
+				error(1,0, "Syntax Error");
+			//TODO: if len=0 then file is EOF so output error.
+		} 	
+	}
+	if (cmd->type == SIMPLE_COMMAND)
+		cmd->u.word = word_ptr;
+	return i;
+}
+
+command_t
+make_command_alt(int (*get_next_byte) (void *), void* fp, char* line_buffer,
+								int len)
+{
+	int val;
+	command_t command = malloc(sizeof(command));
+	val =make_cmd_alt_aux(get_next_byte, fp, line_buffer, 0, command, 0);
+	if (val == -1)
+		return NULL;
+	return command;
+}
+
+inline
 void
 syntax_chk(int retval, int line)
 {
@@ -70,6 +314,7 @@ syntax_chk(int retval, int line)
 		error (1, 0, "Error at line:%d\n", line);
 		//printf("Error at line: %d\n",line);
 }
+
 
 /* Read line from stream into buffer and return its length */
 // TODO Add check for first char, if first char is whitespace
@@ -135,7 +380,7 @@ count_words(char* line_buffer, int len)
 	while (i < len)
 	{
 		while(i < len && is_space(c=line_buffer[i]) == TRUE
-						&& is_special(c) == FALSE)
+					&& is_special(c) == FALSE)
 			i++;
 		if (i < len && is_special(c) == FALSE)
 			num++;
@@ -313,8 +558,10 @@ make_command_stream (int (*get_next_byte) (void *),
 	stream->list = malloc(sizeof(struct command_node));
 	struct command_node* walk = stream->list;
 
- 	while ((walk->cmd = make_command(get_next_byte,
-				get_next_byte_argument, line_buffer, num_cmds+1)) != NULL) 
+ //	while ((walk->cmd = make_command(get_next_byte,
+	//			get_next_byte_argument, line_buffer, num_cmds+1)) != NULL)
+	while ((walk->cmd = make_command_alt(get_next_byte,
+				get_next_byte_argument, line_buffer, BUFFER_SIZE)) != NULL)  
 	{
 			walk->nxt = malloc(sizeof(struct command_node));
 			walk = walk->nxt;
