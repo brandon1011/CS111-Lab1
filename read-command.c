@@ -7,9 +7,9 @@
 #include "command-internals.h"
 #include <error.h>
 /* TODO: 	
-					1.  Fix dynamically allocated word size for subshell cmd with
-							multiple lines
-					2. 	Fix ignore white space tokens
+			1. Bug when terminating token is ||, &&, 
+				| or ; followed by white space
+			2. Ignore Empty lines in script
 */
 #include <stdlib.h>
 #include <stdio.h>
@@ -187,6 +187,8 @@ get_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 		len++;
 		c=(*get_next_byte)(fp);
 	}
+	if (c < 0)		// If c is negative, return EOF
+		return -1;
 	if (len >= BUFFER_SIZE)
 		error(1,0, "Buffer Overflow");
 	return len;
@@ -348,8 +350,18 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 			len = get_line(get_next_byte, fp, line_buffer);
 			*line_num = *line_num + 1;
 			i = 0;
-			if (len == 0 && flag == 0)
+			if (len == -1 && flag == 0)
+			// if len=0, may be empty line
 				return -1;
+			if (len == 0 && flag == 0)
+			{
+				while ((len=get_line(get_next_byte,fp,line_buffer)) == 0)
+				{
+					if (len == -1)
+						return -1;
+					*line_num = *line_num+1;
+				}
+			}
 			else if (len == 0 && flag == 1)
 				error(1,0, "Syntax Error: %d", *line_num);
 			else if (len==0 && subshell == TRUE)

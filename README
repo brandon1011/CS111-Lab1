@@ -1,14 +1,72 @@
-	CS 111 Lab 1A
 	Jordi Burbano UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 
-This is a skeleton for CS 111 Lab 1.
+***************************************************************************
+*															CS 111 Lab 1A																*
+***************************************************************************
+0. CONTENTS
+		1. Implementation Details	................. 11
+		2. Limitations ............................ 71
 
-Replace this README file with notes on your implementation.
-Mentions any special features or limitations.
 
+1. IMPLEMENTATION DETAILS
+	This POSIX shell command reader employs a token-centric implementation of
+the parser. The command_stream object is implemented as a linked list of
+command_nodes which is a structure defined with the following members:
 
-command.h
-command-internals.h
-read-command.c
-	implement command_stream
+		command_node* nxt;
+		command_t			cmd;
+
+	I.e. it contains a pointer to a command_node containing the subsequent
+command if it exists (or NULL if it is the last command in the stream). The
+"cmd" member is a pointer to the command object.
+
+	The command structure follows the definition provided in 
+"command-internals.h".
+
+	The "read_command_stream" function processes each command in the stream
+individually until the stream is empty (returns NULL).
+
+	The "make_command_stream" function calls the "make_command" function
+until it returns NULL (no commands remain in the filestream).
+
+	The "make_command" function is an interface that calls its auxilary
+function "make_cmd_aux". 
+
+	The "make_cmd_aux" function parses the filestream for a valid command.
+In the basic case, it reads in a single line from the filestream using
+the "get_line" function and stores the line in a line buffer array. 
+The line buffer is parsed for individual tokens by calling the 
+"get_token" function. A token is a structure defined with the following
+members:
+
+	token_type	type;
+	char*				word;
+
+The type "token_type" is an enum of all special tokens and words
+(not including white space). The word member is only utilized for
+token_type = WORD, in which it contains an array of characters that
+compose the word.
+
+	Make cmd_aux asks get_token to categorize and return the next token
+in the line buffer and processes each type differently:
+	
+	For token_type = WORD, each token sequentially. The word member is
+copied into the cmd->u.word field. This operation is terminated
+when the end of the line buffer is reached or if another special 
+character is encountered.
+
+	For token_type = {IN,OUT}, corresponding to the I/O redirection
+characters, if the current command does not already have such field defined,the following token returned by get_token is placed in the 
+cmd->{input,output} field.
+
+ For token_type = {AND, OR, PIPE, SEMI} corresponding to all sequence-type
+tokens of the form A <token> B, all tokens processed thusfar are copied intoa newly allocated command at cmd->u.command[0]. The contents of 
+cmd->u.command[1] are found by calling make_cmd_aux recursively.
+
+ For token_type = OPAREN (open parenthesis), a SUBSHELL_COMMAND is present.
+The contents of this command are determined recursively, until a ')' is 
+discovered or EOF.
+
+2. LIMITATIONS
+
