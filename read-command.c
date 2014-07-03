@@ -191,7 +191,7 @@ int count_words(char* line_buffer, int len);
 
 int
 make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
-								int len, command_t cmd, int flag, boolean subshell)
+								int len, command_t cmd, int flag, boolean subshell, int* line_num)
 {
 	boolean done = FALSE;	// Signifies incomplete cmd
 	token* t = malloc(sizeof(token));
@@ -235,14 +235,14 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 			else if (type == OPAREN)
 			{
 				if (wnum != 0)
-					error(1,0, "Subshell error");	
+					error(1,0, "Subshell error: %d", *line_num);	
 				//free(word_ptr);	
 				cmd->u.subshell_command = checked_malloc(sizeof(struct command));
 				i+= make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
-							len-i, cmd->u.subshell_command, 1, TRUE);
+							len-i, cmd->u.subshell_command, 1, TRUE, line_num);
 				i = get_token(line_buffer, len, i, t);
 				if (t->type != CPAREN)
-					error(1,0, "Need close paren");
+					error(1,0, "Need close paren: %d", *line_num);
 				cmd->type = SUBSHELL_COMMAND;
 				done = TRUE;
 			}
@@ -279,17 +279,17 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 				}
 
 				i += make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
-							 len-i, cmd->u.command[1], 1, FALSE);	
+							 len-i, cmd->u.command[1], 1, FALSE, line_num);	
 			}
 			else if (type== IN)
 			{
 				if (cmd->input != NULL)
-					error(1,0, "multiple input redirect");
+					error(1,0, "multiple input redirect: %d", *line_num);
 				word_count = count_words(line_buffer+i, len-i);
 				if (word_count > 1)
-					error(1,0, "multiple symbols after <");
+					error(1,0, "multiple symbols after <: %d", *line_num);
 				else if (word_count < 1)
-					error(1,0, "no symbols after <");
+					error(1,0, "no symbols after <: %d", *line_num);
 				i = get_token(line_buffer, len, i, t);
 				cmd->input = malloc(WORD_SIZE);
 				memcpy(cmd->input, t->word, WORD_SIZE);
@@ -298,12 +298,12 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 			else if (type == OUT)
 			{
 				if (cmd->output != NULL)
-					error(1,0, "multiple output redirect");
+					error(1,0, "multiple output redirect: %d", *line_num);
 				word_count = count_words(line_buffer+i, len-i);
 				if (word_count > 1)
-					error(1,0, "multiple symbols after >");
+					error(1,0, "multiple symbols after >: %d", *line_num);
 				else if (word_count < 1)
-					error(1,0, "no symbols after >");
+					error(1,0, "no symbols after > %d", *line_num);
 				i = get_token(line_buffer, len, i, t);
 				cmd->output = checked_malloc(WORD_SIZE);
 				memcpy(cmd->output, t->word, WORD_SIZE);
@@ -312,8 +312,14 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 			else if (type == COMMENT)
 			{
 				len = get_line(get_next_byte, fp, line_buffer);
+				*line_num = *line_num + 1;
 				i=0;
 				break;
+			}
+			else if (type == INVALID && flag == 1)
+			{
+				i = len;
+				error(1,0, "Invalid command : %d", *line_num);
 			}
 		}	
 		// When the current line buffer is complete and more is needed
@@ -321,13 +327,14 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 		{
 			// Get a new line_buffer and reset i
 			len = get_line(get_next_byte, fp, line_buffer);
+			*line_num = *line_num + 1;
 			i = 0;
 			if (len == 0 && flag == 0)
 				return -1;
 			else if (len == 0 && flag == 1)
-				error(1,0, "Syntax Error");
+				error(1,0, "Syntax Error: %d", *line_num);
 			else if (len==0 && subshell == TRUE)
-				error(1,0, "Subshell error");
+				error(1,0, "Subshell error: %d", *line_num);
 			//TODO: if len=0 then file is EOF so output error.
 		} 	
 	}
@@ -338,12 +345,12 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 
 command_t
 make_command_alt(int (*get_next_byte) (void *), void* fp, char* line_buffer,
-								int len)
+								int len, int* line_num)
 {
 	int val;
 	command_t command = malloc(sizeof(command));
 	val = make_cmd_alt_aux(get_next_byte, fp, line_buffer, 0, 
-						command, 0, FALSE);
+						command, 0, FALSE, line_num);
 	if (val == -1)
 		return NULL;
 	return command;
@@ -596,6 +603,8 @@ make_command_stream (int (*get_next_byte) (void *),
 		     void *get_next_byte_argument)
 {
 	int num_cmds = 0;
+	int* line = malloc(sizeof(int));
+	*line = 0;
 	char *line_buffer = malloc(BUFFER_SIZE);
 	command_stream_t stream = malloc(sizeof(struct command_stream));
 	stream->list = malloc(sizeof(struct command_node));
@@ -604,7 +613,7 @@ make_command_stream (int (*get_next_byte) (void *),
  //	while ((walk->cmd = make_command(get_next_byte,
 	//			get_next_byte_argument, line_buffer, num_cmds+1)) != NULL)
 	while ((walk->cmd = make_command_alt(get_next_byte,
-				get_next_byte_argument, line_buffer, BUFFER_SIZE)) != NULL)  
+				get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL)  
 	{
 			walk->nxt = malloc(sizeof(struct command_node));
 			walk = walk->nxt;
