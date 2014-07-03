@@ -3,8 +3,9 @@
 #include "command-internals.h"
 #include <error.h>
 /* TODO: 	
-					1. check syntax errors
-					2. syntax error when sequence, and or, etc followed by single word
+					1.  Fix dynamically allocated word size for subshell cmd with
+							multiple lines
+					2. 	Fix ignore white space tokens
 */
 #include <stdlib.h>
 #include <stdio.h>
@@ -215,6 +216,19 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 				word_ptr[i] = malloc(WORD_SIZE);
 			cmd->u.word = word_ptr;
 		}
+	
+		if (word_count > 0 && wnum != 0)
+		{
+			word_ptr = malloc((word_count+wnum+2)*sizeof(void*));
+			memcpy(word_ptr, cmd->u.word, sizeof(void*)*(wnum));
+			for (i=wnum; i<word_count+wnum+1; i++)
+			{
+				word_ptr[i] = malloc(WORD_SIZE);
+			}
+			free(cmd->u.word);
+			cmd->u.word = word_ptr;
+		}
+	
 	
 		i =0;
 		while(i < len)	// while current line is not done
