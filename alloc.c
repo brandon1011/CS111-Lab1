@@ -1,3 +1,7 @@
+/*
+	Jordi Burbano UID: 204-076-325
+	Brandon Wu		UID: 603-859-458
+*/
 // UCLA CS 111 Lab 1 storage allocation
 
 #include "alloc.h"

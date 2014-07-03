@@ -1,3 +1,7 @@
+/*
+	Jordi Burbano UID: 204-076-325
+	Brandon Wu		UID: 603-859-458
+*/
 // UCLA CS 111 Lab 1 command reading
 #include "command.h"
 #include "command-internals.h"
@@ -327,10 +331,11 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 			{
 				len = get_line(get_next_byte, fp, line_buffer);
 				*line_num = *line_num + 1;
+				done = FALSE;
 				i=0;
 				break;
 			}
-			else if (type == INVALID && flag == 1)
+			else if (type == INVALID && ((flag == 1) && (done==FALSE)))
 			{
 				i = len;
 				error(1,0, "Invalid command : %d", *line_num);
