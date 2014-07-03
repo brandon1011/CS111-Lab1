@@ -197,7 +197,7 @@ get_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
 int count_words(char* line_buffer, int len);
 
 int
-make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
+make_cmd_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 								int len, command_t cmd, int flag, boolean subshell, int* line_num)
 {
 	boolean done = FALSE;	// Signifies incomplete cmd
@@ -258,7 +258,7 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 					error(1,0, "Subshell error: %d", *line_num);	
 				//free(word_ptr);	
 				cmd->u.subshell_command = checked_malloc(sizeof(struct command));
-				i+= make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
+				i+= make_cmd_aux(get_next_byte, fp, line_buffer+i,
 							len-i, cmd->u.subshell_command, 1, TRUE, line_num);
 				i = get_token(line_buffer, len, i, t);
 				if (t->type != CPAREN)
@@ -298,7 +298,7 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 					default:;
 				}
 
-				i += make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
+				i += make_cmd_aux(get_next_byte, fp, line_buffer+i,
 							 len-i, cmd->u.command[1], 1, FALSE, line_num);	
 			}
 			else if (type== IN)
@@ -375,84 +375,18 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 }
 
 command_t
-make_command_alt(int (*get_next_byte) (void *), void* fp, char* line_buffer,
+make_command(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 								int len, int* line_num)
 {
 	int val;
 	command_t command = malloc(sizeof(command));
-	val = make_cmd_alt_aux(get_next_byte, fp, line_buffer, 0, 
+	val = make_cmd_aux(get_next_byte, fp, line_buffer, 0, 
 						command, 0, FALSE, line_num);
 	if (val == -1)
 		return NULL;
 	return command;
 }
 
-inline
-void
-syntax_chk(int retval, int line)
-{
-	if (retval < 0)
-		error (1, 0, "Error at line:%d\n", line);
-		//printf("Error at line: %d\n",line);
-}
-
-
-/* Read line from stream into buffer and return its length */
-// TODO Add check for first char, if first char is whitespace
-int
-read_line(int (*get_next_byte) (void *), void* fp, char* line_buffer)
-{
-	/*TODO: Add function to return current line-num and remove ignores to \n*/
-	int len = 0;
-	boolean expected_word = FALSE;
-	boolean term_set = FALSE;
-	boolean first_char = FALSE;
-	char term = '\n';
-	char c;
-	while(is_space(c=(*get_next_byte)(fp)) == TRUE && (c>=0));
-	if (c == '#')
-	{
-		while((c=(*get_next_byte)(fp)) != '\n');
-		return read_line(get_next_byte, fp, line_buffer);
-	}
-	while((c != term || expected_word == TRUE)
-				&& (len < BUFFER_SIZE))
-	{
-		if (c < 0)
-			return -1;
-
-		if (term_set == FALSE) 
-			if (c == '(')
-			{
-				term = ')';
-				term_set = TRUE;
-			}
-		if (expected_word == TRUE) 
-			if (is_space(c) == FALSE && c != ';' && c != '|' && c != '&')
-				expected_word = FALSE;
-
-		if (c == '&' || c== '|' || c == ';')
-		{
-			term_set = TRUE;
-			expected_word = TRUE;
-		}
-
-		line_buffer[len] = c;
-		len++;
-
-		c = (*get_next_byte)(fp);
-	}
-	if (term == ')')
-	{
-		line_buffer[len] = term;
-		len++;
-		while((c = (*get_next_byte)(fp)) != '\n');
-	}
-	return len;
-}
-
-/* Count the number of words in buffer up to (not including)
-	special tokens (i.e. |, &, etc) */
 int
 count_words(char* line_buffer, int len)
 {
@@ -475,159 +409,7 @@ count_words(char* line_buffer, int len)
 	}
 	return num;
 }
-/* Given position i determine if current command 
-	is AND, OR, PIPE or SEQUENCE or None*/
-inline
-enum command_type
-categorize_cmd(char* line, int pos, int len) 
-{
-	if (line[pos] == ';')
-		return SEQUENCE_COMMAND;
-	if (line[pos] == '&' && pos < len-1 && line[pos+1] == '&')
-		return AND_COMMAND;
-	if (line[pos] == '|')
-	{
-		if(pos < len-1 && line[pos+1] == '|')
-				return OR_COMMAND;
-		else return PIPE_COMMAND;
-	}
-	if (line[pos] == '(' && line[len-1] == ')')
-		return SUBSHELL_COMMAND;
-	return SIMPLE_COMMAND;
-}
 
-/* Generate word from line_buffer copy non-white space into word */
-inline
-int
-make_word(char* line_buffer, int len, int pos, char* word)
-{
-	int i=0;
-	char c;
-	while ((pos<len) && (is_space(c=line_buffer[pos])==FALSE)
-					&& is_special(c) == FALSE)
-	{
-		if (i > WORD_SIZE)
-			return pos;
-		word[i] = line_buffer[pos];
-		pos++;
-		++i;
-	}	
-	if (i ==0)
-		return -1;
-	return pos;		// Track current position in the line_buffer
-}
-
-/* Helper function for make_command given line_buffer */
-int
-make_cmd_aux(char* line_buffer, int len, command_t cmd, int cmd_num)
-{
-	/* Returns number of words in cmd if type == SIMPLE_COMMAND*/
-	int i, word_count = 0;
-	int num_words = count_words(line_buffer, len);
-	//int num_words = WORD_COUNT;
-	char c;
-	char** word_ptr = malloc((num_words+1)*sizeof(void*));
-	enum command_type type;
-
-	for (i=0; i<num_words; i++)
-		word_ptr[i] = malloc(WORD_SIZE*sizeof(char));
-	cmd->status = -1;
-
-	for(i = 0; i < len; i++)
-	{
-		if (is_space(line_buffer[i]) == TRUE)
-			continue;
-
-		if (word_count < num_words)
-			i = make_word(line_buffer, len, i,word_ptr[word_count]);
-
-		word_count++;
-		if (i >= len)
-			break;
-
-		/* Detect I/O redirects */
-		if ((c=line_buffer[i]) == '<')	// Detect Input redirect
-		{
-			if (i < len-1 && line_buffer[i+1] == '<')
-				i++;
-			cmd->input = malloc(WORD_SIZE*sizeof(char));
-			i++;
-			while(is_space(line_buffer[i]) == TRUE)
-				i++;
-
-			syntax_chk((i = make_word(line_buffer, len, i, cmd->input)),cmd_num);
-			if (i >= len)
-				break;
-		}
-		if ((c=line_buffer[i]) == '>')	// Detect Output redirect
-		{
-			if (i < len-1 && line_buffer[i+1] == '>')
-				i++;
-			cmd->output = malloc(WORD_SIZE*sizeof(char));
-			i++;
-			while(is_space(line_buffer[i]) == TRUE)
-				i++;
-			syntax_chk((i = make_word(line_buffer, len, i, cmd->output)),cmd_num);
-			if (i >= len)
-				break;
-		}
-
-		/* If {SEQUENCE, OR, AND, PIPE}_COMMAND */
-		if ((type = categorize_cmd(line_buffer, i, len)) != SIMPLE_COMMAND
-				&& type != SUBSHELL_COMMAND)
-		{
-			// First cmd is SIMPLE_COMMAND
-			cmd->u.command[0] = malloc(sizeof(struct command));
-			cmd->u.command[0]->status = -1;
-			cmd->u.command[0]->u.word = word_ptr;
-			cmd->u.command[0]->type = SIMPLE_COMMAND;
-			cmd->u.command[0]->input = cmd->input;
-			cmd->u.command[0]->output = cmd->output;
-			cmd->input = NULL;
-			cmd->output = NULL;
-			// Form second cmd recursively
-			cmd->u.command[1] = malloc(sizeof(struct command));
-			cmd->u.command[1]->status = -1;
-			if (type==AND_COMMAND || type==OR_COMMAND)
-				syntax_chk((make_cmd_aux(line_buffer+i+2,
-						len-i-2,cmd->u.command[1], cmd_num)),cmd_num-100);
-
-			else if (type==PIPE_COMMAND || type == SEQUENCE_COMMAND)
-				syntax_chk((make_cmd_aux(line_buffer+i+1,
-					len-i-1,cmd->u.command[1],cmd_num)),cmd_num-100);
-
-			cmd->type = type;
-			return 0;
-		}
-		else if (type == SUBSHELL_COMMAND)
-		{
-			cmd->u.subshell_command = malloc(sizeof(struct command));
-			make_cmd_aux(line_buffer+i+1,len-1, cmd->u.subshell_command, cmd_num);
-			cmd->type = type;
-			return 0;
-		}
-			
-	}
-	cmd->u.word = word_ptr;
-	cmd->type = SIMPLE_COMMAND;
-	if (word_count == 0)
-		return -1;
-	return word_count;
-}
-
-command_t
-make_command(int (*get_next_byte)(void *), void *fp, char *line_buffer, int cmd_num)
-{
-	command_t cmd = malloc(sizeof(struct command));
-	int len = read_line(get_next_byte,fp, line_buffer);
-	if (len < 0) 
-	{
-		free(line_buffer);
-		return NULL;
-	}
-	make_cmd_aux(line_buffer,len,cmd, cmd_num);
-	return cmd;
-}
 /* Make a command stream given file handler */
 command_stream_t
 make_command_stream (int (*get_next_byte) (void *),
@@ -643,7 +425,7 @@ make_command_stream (int (*get_next_byte) (void *),
 
  //	while ((walk->cmd = make_command(get_next_byte,
 	//			get_next_byte_argument, line_buffer, num_cmds+1)) != NULL)
-	while ((walk->cmd = make_command_alt(get_next_byte,
+	while ((walk->cmd = make_command(get_next_byte,
 				get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL)  
 	{
 			walk->nxt = malloc(sizeof(struct command_node));
