@@ -30,6 +30,7 @@ typedef enum
 	SEMI,				// ;
 	IN,					// <
 	OUT,				// >
+	COMMENT,		// #
 	INVALID,		// Invalid token (e.g. <<<)
 } token_type;
 
@@ -79,6 +80,7 @@ is_special(char c)
 		case '>':
 		case '(':
 		case ')':
+		case '#':
 			return TRUE;
 		default: return FALSE;
 	}
@@ -89,7 +91,6 @@ token_type
 get_token_type(char* line_buffer, int pos, int len)
 {
 	char c = line_buffer[pos];	
-
 	if (c=='(')
 		return OPAREN;
 	if (c==')')
@@ -100,6 +101,10 @@ get_token_type(char* line_buffer, int pos, int len)
 		return IN;
 	if (c=='>')
 		return OUT;
+	if (c=='#')
+	{
+		return COMMENT;
+	}
 	if (c=='&')
 	{
 		if(pos<len-1 && line_buffer[pos+1] == '&')
@@ -121,10 +126,15 @@ get_token(char* line_buffer, int len, int pos, token* t)
 	char c;
 	//int pos = 0;
 	int word_len = 0;
-
+	if (pos >= len)
+	{
+		t->type = INVALID;
+		return pos;
+	}
 	while((pos<len) && is_space(c=line_buffer[pos])==TRUE)
 		++pos;
 
+	//printf("%c HERE\n", c);
 	if ((pos<len) && is_special(c) == FALSE)	// if it is a word token
 	{
 		t->type = WORD;
@@ -141,6 +151,9 @@ get_token(char* line_buffer, int len, int pos, token* t)
 	}
 	else	// if it is a special token
 	{
+		t->type = get_token_type(line_buffer, pos, len);
+		if (t->type == COMMENT)
+			return len;
 		switch((t->type = get_token_type(line_buffer, pos, len)))
 		{
 			case AND:
@@ -151,7 +164,7 @@ get_token(char* line_buffer, int len, int pos, token* t)
 	}
 	if (t->type == IN || t->type == OUT)
 		if (line_buffer[pos-1] == line_buffer[pos])
-			pos++;
+	pos++;
 	return pos;
 }
 
@@ -178,7 +191,7 @@ int count_words(char* line_buffer, int len);
 
 int
 make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
-								int len, command_t cmd, int flag)
+								int len, command_t cmd, int flag, boolean subshell)
 {
 	boolean done = FALSE;	// Signifies incomplete cmd
 	token* t = malloc(sizeof(token));
@@ -190,18 +203,19 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 	cmd->output = NULL;
 	cmd->type = SIMPLE_COMMAND;
 
-	while(done == FALSE)
+	while(done == FALSE || subshell == TRUE)
 	{
 
 		word_count = count_words(line_buffer, len);	
 
-		if (word_count > 0)
+		if (word_count > 0 && wnum == 0) 
 		{
-			word_ptr = malloc((word_count+1)*sizeof(void*));	
-			for (i=0; i<word_count; ++i)
+			word_ptr = malloc((word_count+2)*sizeof(void*));	
+			for (i=0; i<word_count+1; ++i)
 				word_ptr[i] = malloc(WORD_SIZE);
 			cmd->u.word = word_ptr;
 		}
+	
 		i =0;
 		while(i < len)	// while current line is not done
 		{
@@ -211,11 +225,31 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 			done = TRUE;
 			i = get_token(line_buffer, len, i, t);
 			token_type type = t->type;	
-			if(t->type == WORD)
+		
+			if(type == WORD)
 			{
 				memcpy(word_ptr[wnum], t->word, WORD_SIZE);
 				free(t->word);
 				wnum++;
+			}
+			else if (type == OPAREN)
+			{
+				if (wnum != 0)
+					error(1,0, "Subshell error");	
+				//free(word_ptr);	
+				cmd->u.subshell_command = checked_malloc(sizeof(struct command));
+				i+= make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
+							len-i, cmd->u.subshell_command, 1, TRUE);
+				i = get_token(line_buffer, len, i, t);
+				if (t->type != CPAREN)
+					error(1,0, "Need close paren");
+				cmd->type = SUBSHELL_COMMAND;
+				done = TRUE;
+			}
+			else if (type == CPAREN)
+			{
+				subshell = FALSE;
+				return i-1;
 			}
 			// if {AND, OR, PIPE, SEQUENCE}_COMMAND
 			else if ((type==AND) || (t->type==OR) || (t->type==PIPE)
@@ -245,7 +279,7 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 				}
 
 				i += make_cmd_alt_aux(get_next_byte, fp, line_buffer+i,
-							 len-i, cmd->u.command[1], 1);	
+							 len-i, cmd->u.command[1], 1, FALSE);	
 			}
 			else if (type== IN)
 			{
@@ -271,13 +305,19 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 				else if (word_count < 1)
 					error(1,0, "no symbols after >");
 				i = get_token(line_buffer, len, i, t);
-				cmd->output = malloc(WORD_SIZE);
+				cmd->output = checked_malloc(WORD_SIZE);
 				memcpy(cmd->output, t->word, WORD_SIZE);
 				
 			}
+			else if (type == COMMENT)
+			{
+				len = get_line(get_next_byte, fp, line_buffer);
+				i=0;
+				break;
+			}
 		}	
 		// When the current line buffer is complete and more is needed
-		if ((i >= len) && (done == FALSE))
+		if ((i >= len) && ((done == FALSE) || (subshell == TRUE)))
 		{
 			// Get a new line_buffer and reset i
 			len = get_line(get_next_byte, fp, line_buffer);
@@ -286,6 +326,8 @@ make_cmd_alt_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 				return -1;
 			else if (len == 0 && flag == 1)
 				error(1,0, "Syntax Error");
+			else if (len==0 && subshell == TRUE)
+				error(1,0, "Subshell error");
 			//TODO: if len=0 then file is EOF so output error.
 		} 	
 	}
@@ -300,7 +342,8 @@ make_command_alt(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 {
 	int val;
 	command_t command = malloc(sizeof(command));
-	val =make_cmd_alt_aux(get_next_byte, fp, line_buffer, 0, command, 0);
+	val = make_cmd_alt_aux(get_next_byte, fp, line_buffer, 0, 
+						command, 0, FALSE);
 	if (val == -1)
 		return NULL;
 	return command;
