@@ -37,6 +37,7 @@ typedef enum
 	IN,					// <
 	OUT,				// >
 	COMMENT,		// #
+	TICK,				// `
 	INVALID,		// Invalid token (e.g. <<<)
 } token_type;
 
@@ -88,6 +89,7 @@ is_special(char c)
 		case '(':
 		case ')':
 		case '#':
+		case '`':
 			return TRUE;
 		default: return FALSE;
 	}
@@ -124,6 +126,8 @@ get_token_type(char* line_buffer, int pos, int len)
 			return OR;
 		else return PIPE;
 	}
+	else if (c == '`')
+		return TICK;
 	return INVALID;
 }
 
@@ -416,6 +420,10 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			}
 			else if (type == COMMENT)
 				done = FALSE;
+			else if (type == TICK)
+			{
+				error(1,0,"Invalid symbol");
+			}
 		}
 	}
 	return cmd;
