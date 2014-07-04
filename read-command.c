@@ -223,6 +223,181 @@ count_words(char* line_buffer, int len)
 	return num;
 }
 
+int
+make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
+		int len, int pos, command_t cmd, int subshell)
+{
+	int num_words = count_words(line_buffer+pos, len-pos);
+	int i = 0, wnum = 0;
+	token* t = malloc(sizeof(token));
+	
+	if (num_words == 0)
+	{
+		return -1;
+	}
+	cmd->type = SIMPLE_COMMAND;
+	cmd->u.word = malloc(sizeof(void*)*num_words+1);
+
+	for (i=0; i<num_words; ++i)
+		cmd->u.word[i] = malloc(WORD_SIZE);
+
+	i = get_token(line_buffer, len, pos, t);
+	do
+	{
+		memcpy(cmd->u.word[wnum],t->word, WORD_SIZE);
+		wnum++;
+		i = get_token(line_buffer, len, i, t);
+	}
+	while (wnum < num_words && (t->type == WORD));
+	token_type type = t->type;
+	free(t->word);
+	switch(type)
+	{
+		case AND:
+		case OR:
+			return i-2;
+		case INVALID:
+			return i;
+		default: return i-1;
+	}
+}	
+
+command_t
+make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
+		int len, int* line_num)
+{
+	boolean done = FALSE;
+	command_t cmd = NULL;
+	token* t = malloc(sizeof(token));
+	int pos = 0;
+
+	int temp;
+	
+	while(done == FALSE)
+	{
+		while(pos>=len)
+		{
+			len = get_line(get_next_byte, fp, line_buffer);
+			if (len < 0)
+				return NULL;
+			pos = 0;
+			*line_num += 1;
+		}
+		
+		done = TRUE;
+		
+		while(pos < len)
+		{
+			temp = get_token(line_buffer, len, pos, t);	
+			token_type type = t->type;
+			if (type!=WORD)
+				pos= temp;
+			if (type==WORD)
+			{
+				cmd = malloc(sizeof(struct command));
+				pos = make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
+						cmd, 0);
+			}
+			else if (type==IN || type==OUT)
+			{
+				command_t tmp_cmd;
+				if (cmd == NULL)
+					error(1,0, "no leading cmd");
+				if (cmd->type != SIMPLE_COMMAND)
+				{
+					if (cmd->type != AND_COMMAND && cmd->type != OR_COMMAND
+					&& cmd->type != PIPE_COMMAND && cmd->type != SEQUENCE_COMMAND)
+						error(1,0, "I/O not preceded by simple cmd");
+					if (cmd->u.command[1] == NULL || 
+					cmd->u.command[1]->type != SIMPLE_COMMAND)
+						error(1,0, "I/O not preceded by simple cmd");
+					tmp_cmd = cmd->u.command[1];
+				}
+				else
+					tmp_cmd = cmd;
+				if (type==IN)
+				{
+					if (cmd->input != NULL)
+						error(1,0, "More than one Input");
+					else
+					{
+						tmp_cmd->input = malloc(WORD_SIZE);
+						pos = get_token(line_buffer, len, pos, t);
+						if (t->type != WORD)
+							error(1,0, "Needs to be followed by single word");
+						memcpy(tmp_cmd->input, t->word,WORD_SIZE);
+						free(t->word);
+						get_token(line_buffer,len,pos,t);
+						if (t->type == WORD)
+							error(1,0,"Cannot be folowed by more than one word");
+					}
+				}
+				if (type==OUT)
+				{
+					if (cmd->output != NULL)
+						error(1,0, "More than one Output");
+					else
+					{
+						cmd->output = malloc(WORD_SIZE);
+						pos = get_token(line_buffer, len, pos, t);
+						if (t->type != WORD)
+							error(1,0, "Needs to be followed by single word");
+						memcpy(cmd->output, t->word,WORD_SIZE);
+						free(t->word);
+						get_token(line_buffer,len,pos,t);
+						if (t->type == WORD)
+							error(1,0,"Cannot be folowed by more than one word");
+					}
+				}				
+			}
+			else if (type==AND || type==OR || type==PIPE || type == SEMI)
+			{
+				if (cmd == NULL)
+					error(1,0, "No left-hand operand");
+	
+				command_t tmp_cmd = cmd;
+				command_t new_cmd = cmd;
+
+				tmp_cmd = malloc(sizeof(struct command));
+				cmd = tmp_cmd;
+
+				tmp_cmd->status = -1;
+				tmp_cmd->u.command[0] = new_cmd;
+				tmp_cmd->u.command[1] = malloc(sizeof(struct command));
+				
+				while((pos = make_simple_cmd(get_next_byte, fp, line_buffer, 
+					len, pos,tmp_cmd->u.command[1], 0)) == -1)
+				{
+					len = get_line(get_next_byte, fp, line_buffer);		
+					if (len == -1)
+						error(1,0, "Syntax Error");
+					pos = 0;
+				}
+
+				switch(type)
+				{
+					case AND:
+						tmp_cmd->type = AND_COMMAND;
+						break;
+					case OR:
+						tmp_cmd->type = OR_COMMAND;
+						break;
+					case PIPE:
+						tmp_cmd->type = PIPE_COMMAND;
+						break;
+					case SEMI:
+						tmp_cmd->type = SEQUENCE_COMMAND; 
+						break;
+					default:;
+				}	
+			}
+			else if (type == COMMENT)
+				done = FALSE;
+		}
+	}
+	return cmd;
+}
+
 /* 	Helper function to make_command can recursively call itself
 		Returns pos of last */
 int
@@ -439,10 +614,10 @@ make_command_stream (int (*get_next_byte) (void *),
 	stream->list = malloc(sizeof(struct command_node));
 	struct command_node* walk = stream->list;
 
- //	while ((walk->cmd = make_command(get_next_byte,
-	//			get_next_byte_argument, line_buffer, num_cmds+1)) != NULL)
-	while ((walk->cmd = make_command(get_next_byte,
-				get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL)  
+	//while ((walk->cmd = make_command(get_next_byte,
+				//get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL) 
+	while ((walk->cmd = make_command_alt(get_next_byte,
+				get_next_byte_argument, line_buffer, 0, line)) != NULL)
 	{
 			walk->nxt = malloc(sizeof(struct command_node));
 			walk = walk->nxt;
