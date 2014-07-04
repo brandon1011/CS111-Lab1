@@ -223,6 +223,8 @@ count_words(char* line_buffer, int len)
 	return num;
 }
 
+/* 	Helper function to make_command can recursively call itself
+		Returns pos of last */
 int
 make_cmd_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
 		int len, command_t cmd, int flag, boolean subshell, int* line_num)
