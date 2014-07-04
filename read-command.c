@@ -222,7 +222,36 @@ count_words(char* line_buffer, int len)
 	}
 	return num;
 }
-
+int
+get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
+{
+	/* 	if input = 1, the redirect is input
+			if input = 0, the redirect is an output	*/
+	int i;
+	char* word = malloc(WORD_SIZE);
+	token* t = malloc(sizeof(token));
+	if (input)
+	{
+		if (cmd->input != NULL)
+			error(1,0, "Multiple I/O redirect");
+		cmd->input = word;
+	}
+	else
+	{
+		if (cmd->output != NULL)
+			error(1,0, "Multiple I/O Redirect");
+		cmd->output = word;
+	}
+	i = get_token(line_buffer,len, pos, t);
+	if (t->type != WORD)
+		error(1,0, "I/O redirect needs to be followed by a word");
+	memcpy(word, t->word, WORD_SIZE);
+	free(t->word);
+	get_token(line_buffer,len,i,t);
+	if (t->type == WORD)
+		error(1,0,"I/O redirect cannot be followed by > 1 word");
+	return i;
+}
 int
 make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		int len, int pos, command_t cmd, int subshell)
@@ -244,11 +273,17 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	i = get_token(line_buffer, len, pos, t);
 	do
 	{
-		memcpy(cmd->u.word[wnum],t->word, WORD_SIZE);
+		if (t->type==IN || t->type==OUT)
+		{
+			i = get_io(line_buffer, len, i, cmd, (t->type==IN));
+		}
+		else
+			memcpy(cmd->u.word[wnum],t->word, WORD_SIZE);
 		wnum++;
 		i = get_token(line_buffer, len, i, t);
 	}
-	while (wnum < num_words && (t->type == WORD));
+	while ((wnum<num_words && t->type==WORD) || t->type==IN || t->type==OUT);
+	
 	token_type type = t->type;
 	free(t->word);
 	switch(type)
@@ -256,6 +291,8 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		case AND:
 		case OR:
 			return i-2;
+		case IN:
+		case OUT:
 		case INVALID:
 			return i;
 		default: return i-1;
@@ -300,56 +337,8 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			}
 			else if (type==IN || type==OUT)
 			{
-				command_t tmp_cmd;
-				if (cmd == NULL)
-					error(1,0, "no leading cmd");
-				if (cmd->type != SIMPLE_COMMAND)
-				{
-					if (cmd->type != AND_COMMAND && cmd->type != OR_COMMAND
-					&& cmd->type != PIPE_COMMAND && cmd->type != SEQUENCE_COMMAND)
-						error(1,0, "I/O not preceded by simple cmd");
-					if (cmd->u.command[1] == NULL || 
-					cmd->u.command[1]->type != SIMPLE_COMMAND)
-						error(1,0, "I/O not preceded by simple cmd");
-					tmp_cmd = cmd->u.command[1];
-				}
-				else
-					tmp_cmd = cmd;
-				if (type==IN)
-				{
-					if (cmd->input != NULL)
-						error(1,0, "More than one Input");
-					else
-					{
-						tmp_cmd->input = malloc(WORD_SIZE);
-						pos = get_token(line_buffer, len, pos, t);
-						if (t->type != WORD)
-							error(1,0, "Needs to be followed by single word");
-						memcpy(tmp_cmd->input, t->word,WORD_SIZE);
-						free(t->word);
-						get_token(line_buffer,len,pos,t);
-						if (t->type == WORD)
-							error(1,0,"Cannot be folowed by more than one word");
-					}
-				}
-				if (type==OUT)
-				{
-					if (cmd->output != NULL)
-						error(1,0, "More than one Output");
-					else
-					{
-						cmd->output = malloc(WORD_SIZE);
-						pos = get_token(line_buffer, len, pos, t);
-						if (t->type != WORD)
-							error(1,0, "Needs to be followed by single word");
-						memcpy(cmd->output, t->word,WORD_SIZE);
-						free(t->word);
-						get_token(line_buffer,len,pos,t);
-						if (t->type == WORD)
-							error(1,0,"Cannot be folowed by more than one word");
-					}
-				}				
-			}
+				error(1,0, "I/O not affiliated with simple command");
+			} 
 			else if (type==AND || type==OR || type==PIPE || type == SEMI)
 			{
 				if (cmd == NULL)
