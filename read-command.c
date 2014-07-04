@@ -301,7 +301,7 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 
 command_t
 make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
-		int len, int* line_num)
+		int len, int* line_num, int subshell)
 {
 	boolean done = FALSE;
 	command_t cmd = NULL;
@@ -310,13 +310,18 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 
 	int temp;
 	
-	while(done == FALSE)
+	while(done == FALSE || subshell==1)
 	{
 		while(pos>=len)
 		{
 			len = get_line(get_next_byte, fp, line_buffer);
 			if (len < 0)
-				return NULL;
+			{
+				if (subshell)
+					error(1,0, "Subshell not terminated");
+				else return NULL;	
+			}
+			
 			pos = 0;
 			*line_num += 1;
 		}
@@ -386,6 +391,28 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 						break;
 					default:;
 				}	
+			}
+			else if (type == OPAREN)
+			{
+				if (cmd != NULL)
+					error(1,0,"Non empty cmd preceding '('");	
+				cmd = malloc(sizeof(struct command));
+				cmd->status = -1;
+				cmd->type = SUBSHELL_COMMAND;
+				cmd->u.subshell_command = make_command_alt(get_next_byte, fp,
+					line_buffer+pos, len-pos, line_num, subshell+1);
+				return cmd;
+			}
+			else if (type == CPAREN)
+			{
+				if (subshell== 1)
+				{
+					return cmd;
+				}
+				else if (subshell > 1)
+					subshell--;
+				else
+					error(1,0,"Unmatched ')'");
 			}
 			else if (type == COMMENT)
 				done = FALSE;
@@ -613,7 +640,7 @@ make_command_stream (int (*get_next_byte) (void *),
 	//while ((walk->cmd = make_command(get_next_byte,
 				//get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL) 
 	while ((walk->cmd = make_command_alt(get_next_byte,
-				get_next_byte_argument, line_buffer, 0, line)) != NULL)
+				get_next_byte_argument, line_buffer, 0, line, 0)) != NULL)
 	{
 			walk->nxt = malloc(sizeof(struct command_node));
 			walk = walk->nxt;
