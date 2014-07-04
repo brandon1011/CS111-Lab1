@@ -7,10 +7,8 @@
 #include "command-internals.h"
 #include <error.h>
 /* TODO: 	
-			1. Single Ampersand should be error but currently is ignored
-			2. Error when white space on line following unmatched OR,AND,
-					SEQUENCE, or PIPE
-			3. No Error thrown if unmatched closed-paren token
+		1. 	Proper error msg format
+		2.	Better documentation
 */
 #include <stdlib.h>
 #include <stdio.h>
@@ -152,7 +150,7 @@ get_token(char* line_buffer, int len, int pos, token* t)
 	if ((pos<len) && is_special(c) == FALSE)	// if it is a word token
 	{
 		t->type = WORD;
-		t->word = malloc(WORD_SIZE);
+		t->word = checked_malloc(WORD_SIZE);
 
 		//t->word[0] = c;
 		while (pos<len && is_space(c=line_buffer[pos]) == FALSE  
@@ -232,8 +230,8 @@ get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
 	/* 	if input = 1, the redirect is input
 			if input = 0, the redirect is an output	*/
 	int i;
-	char* word = malloc(WORD_SIZE);
-	token* t = malloc(sizeof(token));
+	char* word = checked_malloc(WORD_SIZE);
+	token* t = checked_malloc(sizeof(token));
 	if (input)
 	{
 		if (cmd->input != NULL)
@@ -262,17 +260,17 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 {
 	int num_words = count_words(line_buffer+pos, len-pos);
 	int i = 0, wnum = 0;
-	token* t = malloc(sizeof(token));
+	token* t = checked_malloc(sizeof(token));
 	
 	if (num_words == 0)
 	{
 		return -1;
 	}
 	cmd->type = SIMPLE_COMMAND;
-	cmd->u.word = malloc(sizeof(void*)*num_words+1);
+	cmd->u.word = checked_malloc(sizeof(void*)*num_words+1);
 
 	for (i=0; i<num_words; ++i)
-		cmd->u.word[i] = malloc(WORD_SIZE);
+		cmd->u.word[i] = checked_malloc(WORD_SIZE);
 
 	i = get_token(line_buffer, len, pos, t);
 	do
@@ -304,12 +302,12 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 }	
 
 command_t
-make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
+make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		int len, int* line_num, int subshell)
 {
 	boolean done = FALSE;
 	command_t cmd = NULL;
-	token* t = malloc(sizeof(token));
+	token* t = checked_malloc(sizeof(token));
 	int pos = 0;
 
 	int temp;
@@ -340,7 +338,7 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				pos= temp;
 			if (type==WORD)
 			{
-				cmd = malloc(sizeof(struct command));
+				cmd = checked_malloc(sizeof(struct command));
 				pos = make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
 						cmd, 0);
 			}
@@ -354,8 +352,8 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 					error(1,0, "No left-hand operand");
 	
 				command_t tmp_cmd;
-				tmp_cmd = malloc(sizeof(struct command));
-				tmp_cmd->u.command[1] = malloc(sizeof(struct command));
+				tmp_cmd = checked_malloc(sizeof(struct command));
+				tmp_cmd->u.command[1] = checked_malloc(sizeof(struct command));
 				tmp_cmd->status = -1;
 				
 				if((type==PIPE || type==SEMI)&&(cmd->type==AND_COMMAND ||
@@ -400,10 +398,10 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			{
 				if (cmd != NULL)
 					error(1,0,"Non empty cmd preceding '('");	
-				cmd = malloc(sizeof(struct command));
+				cmd = checked_malloc(sizeof(struct command));
 				cmd->status = -1;
 				cmd->type = SUBSHELL_COMMAND;
-				cmd->u.subshell_command = make_command_alt(get_next_byte, fp,
+				cmd->u.subshell_command = make_command(get_next_byte, fp,
 					line_buffer+pos, len-pos, line_num, subshell+1);
 				return cmd;
 			}
@@ -429,228 +427,25 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	return cmd;
 }
 
-/* 	Helper function to make_command can recursively call itself
-		Returns pos of last */
-int
-make_cmd_aux(int (*get_next_byte) (void *), void* fp, char* line_buffer,
-		int len, command_t cmd, int flag, boolean subshell, int* line_num)
-{
-	boolean done = FALSE;	// Signifies incomplete cmd
-	token* t = malloc(sizeof(token));
-	int word_count, wnum=0, i=0;
-	char** word_ptr;
-	
-	cmd->status = -1;
-	cmd->input = NULL;
-	cmd->output = NULL;
-	cmd->type = SIMPLE_COMMAND;
-
-	while(done == FALSE || subshell == TRUE)
-	{
-
-		word_count = count_words(line_buffer, len);	
-
-		if (word_count > 0 && wnum == 0) 
-		{
-			word_ptr = malloc((word_count+2)*sizeof(void*));	
-			for (i=0; i<word_count+1; ++i)
-				word_ptr[i] = malloc(WORD_SIZE);
-			cmd->u.word = word_ptr;
-		}
-	
-		if (word_count > 0 && wnum != 0)
-		{
-			word_ptr = malloc((word_count+wnum+2)*sizeof(void*));
-			memcpy(word_ptr, cmd->u.word, sizeof(void*)*(wnum));
-			for (i=wnum; i<word_count+wnum+1; i++)
-			{
-				word_ptr[i] = malloc(WORD_SIZE);
-			}
-			free(cmd->u.word);
-			cmd->u.word = word_ptr;
-		}
-		i =0;
-		while(i < len)	// while current line is not done
-		{
-			// if only word tokens, iterate til end of line
-			// and create normal token
-			
-			done = TRUE;
-			i = get_token(line_buffer, len, i, t);
-			token_type type = t->type;	
-		
-			if(type == WORD)
-			{
-				memcpy(word_ptr[wnum], t->word, WORD_SIZE);
-				free(t->word);
-				wnum++;
-			}
-			else if (type == OPAREN)
-			{
-				if (wnum != 0)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "Subshell error: %d", *line_num);	
-				//free(word_ptr);	
-				cmd->u.subshell_command = checked_malloc(sizeof(struct command));
-				i+= make_cmd_aux(get_next_byte, fp, line_buffer+i,
-							len-i, cmd->u.subshell_command, 1, TRUE, line_num);
-				i = get_token(line_buffer, len, i, t);
-				if (t->type != CPAREN)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "Need close paren: %d", *line_num);
-				cmd->type = SUBSHELL_COMMAND;
-				done = TRUE;
-			}
-			else if (type == CPAREN)
-			{
-				subshell = FALSE;
-				return i-1;
-			}
-			// if {AND, OR, PIPE, SEQUENCE}_COMMAND
-			else if ((type==AND) || (t->type==OR) || (t->type==PIPE)
-					|| (type == SEMI))
-			{
-				cmd->u.command[0] = malloc(sizeof(struct command));
-				cmd->u.command[1] = malloc(sizeof(struct command));
-				memcpy(cmd->u.command[0], cmd, sizeof(struct command));
-				cmd->u.command[0]->u.word = word_ptr;
-				cmd->input = NULL;
-				cmd->output = NULL;
-				switch(type)
-				{
-					case AND:
-						cmd->type = AND_COMMAND;
-						break;
-					case OR:
-						cmd->type = OR_COMMAND;
-						break;
-					case PIPE:
-						cmd->type = PIPE_COMMAND;
-						break;
-					case SEMI:
-						cmd->type = SEQUENCE_COMMAND;
-						break;
-					default:;
-				}
-
-				i += make_cmd_aux(get_next_byte, fp, line_buffer+i,
-							 len-i, cmd->u.command[1], 1, FALSE, line_num);	
-			}
-			else if (type== IN)
-			{
-				if (cmd->input != NULL)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "multiple input redirect: %d", *line_num);
-				word_count = count_words(line_buffer+i, len-i);
-				if (word_count > 1)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "multiple symbols after <: %d", *line_num);
-				else if (word_count < 1)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "no symbols after <: %d", *line_num);
-				i = get_token(line_buffer, len, i, t);
-				cmd->input = malloc(WORD_SIZE);
-				memcpy(cmd->input, t->word, WORD_SIZE);
-			
-			}
-			else if (type == OUT)
-			{
-				if (cmd->output != NULL)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "multiple output redirect: %d", *line_num);
-				word_count = count_words(line_buffer+i, len-i);
-				if (word_count > 1)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "multiple symbols after >: %d", *line_num);
-				else if (word_count < 1)
-					error(1,0,"%d:",*line_num);
-					//error(1,0, "no symbols after > %d", *line_num);
-				i = get_token(line_buffer, len, i, t);
-				cmd->output = checked_malloc(WORD_SIZE);
-				memcpy(cmd->output, t->word, WORD_SIZE);
-				
-			}
-			else if (type == COMMENT)
-			{
-				len = get_line(get_next_byte, fp, line_buffer);
-				*line_num = *line_num + 1;
-				done = FALSE;
-				i=0;
-				break;
-			}
-			else if (type == INVALID && ((flag == 1) && (done==FALSE)))
-			{
-				i = len;
-				error(1,0,"%d:",*line_num);
-				//error(1,0, "Invalid command : %d", *line_num);
-			}
-		}	
-		// When the current line buffer is complete and more is needed
-		if ((i >= len) && ((done == FALSE) || (subshell == TRUE)))
-		{
-			// Get a new line_buffer and reset i
-			len = get_line(get_next_byte, fp, line_buffer);
-			*line_num = *line_num + 1;
-			i = 0;
-			if (len == -1 && flag == 0)
-			// if len=0, may be empty line
-				return -1;
-			if (len == 0) // && flag == 0
-			{
-				while ((len=get_line(get_next_byte,fp,line_buffer)) == 0)
-				{
-					*line_num = *line_num+1;
-					if (len == -1)
-						return -1;
-				}
-				*line_num = *line_num+1;
-			}
-			else if (len == -1 && done == FALSE)			// FOR NOW flag == 1
-				error(1,0,"%d:",*line_num);
-				//error(1,0, "Syntax Error: %d", *line_num);
-			else if (len==0 && subshell == TRUE)
-				error(1,0,"%d:",*line_num);
-				//error(1,0, "Subshell error: %d", *line_num);
-		} 	
-	}
-	if (cmd->type == SIMPLE_COMMAND)
-		cmd->u.word = word_ptr;
-	return i;
-}
-
-command_t
-make_command(int (*get_next_byte) (void *), void* fp, char* line_buffer,
-		int len, int* line_num)
-{
-	int val;
-	command_t command = malloc(sizeof(command));
-	val = make_cmd_aux(get_next_byte, fp, line_buffer, 0, 
-						command, 0, FALSE, line_num);
-	if (val == -1)
-		return NULL;
-	return command;
-}
-
-
 /* Make a command stream given file handler */
 command_stream_t
 make_command_stream (int (*get_next_byte) (void *),
 		     void *get_next_byte_argument)
 {
 	int num_cmds = 0;
-	int* line = malloc(sizeof(int));
+	int* line = checked_malloc(sizeof(int));
 	*line = 0;
-	char *line_buffer = malloc(BUFFER_SIZE);
-	command_stream_t stream = malloc(sizeof(struct command_stream));
-	stream->list = malloc(sizeof(struct command_node));
+	char *line_buffer = checked_malloc(BUFFER_SIZE);
+	command_stream_t stream = checked_malloc(sizeof(struct command_stream));
+	stream->list = checked_malloc(sizeof(struct command_node));
 	struct command_node* walk = stream->list;
 
 	//while ((walk->cmd = make_command(get_next_byte,
 				//get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL) 
-	while ((walk->cmd = make_command_alt(get_next_byte,
+	while ((walk->cmd = make_command(get_next_byte,
 				get_next_byte_argument, line_buffer, 0, line, 0)) != NULL)
 	{
-			walk->nxt = malloc(sizeof(struct command_node));
+			walk->nxt = checked_malloc(sizeof(struct command_node));
 			walk = walk->nxt;
 			num_cmds++;
 	}
