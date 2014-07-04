@@ -355,15 +355,22 @@ make_command_alt(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				if (cmd == NULL)
 					error(1,0, "No left-hand operand");
 	
-				command_t tmp_cmd = cmd;
-				command_t new_cmd = cmd;
-
+				command_t tmp_cmd;
 				tmp_cmd = malloc(sizeof(struct command));
-				cmd = tmp_cmd;
-
-				tmp_cmd->status = -1;
-				tmp_cmd->u.command[0] = new_cmd;
 				tmp_cmd->u.command[1] = malloc(sizeof(struct command));
+				tmp_cmd->status = -1;
+				
+				if((type==PIPE || type==SEMI)&&(cmd->type==AND_COMMAND ||
+					cmd->type == OR_COMMAND))
+				{
+					tmp_cmd->u.command[0] = cmd->u.command[1];
+					cmd->u.command[1] = tmp_cmd;
+				}
+				else 
+				{
+					tmp_cmd->u.command[0] = cmd;
+					cmd = tmp_cmd;
+				}
 				
 				while((pos = make_simple_cmd(get_next_byte, fp, line_buffer, 
 					len, pos,tmp_cmd->u.command[1], 0)) == -1)
