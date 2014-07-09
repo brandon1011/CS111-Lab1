@@ -228,7 +228,8 @@ count_words(char* line_buffer, int len)
 
 /* Get I/O redirect file beginning at pos, store the word into command_t */
 int
-get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
+get_io(char* line_buffer, int len, int pos, command_t cmd, int input,
+	int* line_num)
 {
 	/* if input = 1, the redirect is input
 		if input = 0, the redirect is an output	*/
@@ -238,23 +239,23 @@ get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
 	if (input)
 	{
 		if (cmd->input != NULL)
-			error(1,0, "Multiple I/O redirect");
+			error(1,0, "Multiple I/O redirect :%d", *line_num);
 		cmd->input = word;
 	}
 	else
 	{
 		if (cmd->output != NULL)
-			error(1,0, "Multiple I/O Redirect");
+			error(1,0, "Multiple I/O Redirect :%d", *line_num);
 		cmd->output = word;
 	}
 	i = get_token(line_buffer,len, pos, t);
 	if (t->type != WORD)
-		error(1,0, "I/O redirect needs to be followed by a word");
+		error(1,0, "I/O redirect needs to be followed by a word :%d", *line_num);
 	memcpy(word, t->word, WORD_SIZE);
 	free(t->word);
 	get_token(line_buffer,len,i,t);
 	if (t->type == WORD)
-		error(1,0,"I/O redirect cannot be followed by > 1 word");
+		error(1,0,"I/O redirect cannot be followed by > 1 word :%d", *line_num);
 	return i;
 }
 
@@ -263,7 +264,7 @@ end of the simple cmd (i.e newline, pipe, sequence, etc). RETURN last
 visited position in line_buffer */
 int
 make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
-		int len, int pos, command_t cmd, int subshell)
+		int len, int pos, command_t cmd, int subshell, int* line_num)
 {
 	int num_words = count_words(line_buffer+pos, len-pos);
 	int i = 0, wnum = 0;
@@ -273,10 +274,29 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	{
 		return -1;
 	}
-	cmd->type = SIMPLE_COMMAND;
-	cmd->u.word = checked_malloc(sizeof(void*)*num_words+1);
-
-	for (i=0; i<num_words; ++i)
+	if (subshell && (cmd->type == SIMPLE_COMMAND))
+	{
+		/* For a multi-line simple command */
+		char **w = cmd->u.word;
+		while(*w)
+		{
+			wnum++;	// Count num words before in simple cmd
+			w++;
+		}
+		// Extend the space in cmd for words by num_words
+		w = checked_malloc(sizeof(void*)*(wnum+num_words+1));
+		memcpy(w,cmd->u.word, sizeof(void*)*(wnum));	
+		free(cmd->u.word);
+		cmd->u.word = w;
+		num_words +=wnum;
+	}
+	else // For a new simple cmd
+	{
+		cmd->type = SIMPLE_COMMAND;
+		cmd->u.word = checked_malloc(sizeof(void*)*num_words+1);
+	}
+	// Allocate mem for each word
+	for (i=wnum; i<num_words; ++i)
 		cmd->u.word[i] = checked_malloc(WORD_SIZE);
 
 	i = get_token(line_buffer, len, pos, t);
@@ -284,7 +304,7 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	{
 		if (t->type==IN || t->type==OUT)
 		{
-			i = get_io(line_buffer, len, i, cmd, (t->type==IN));
+			i = get_io(line_buffer, len, i, cmd, (t->type==IN),line_num);
 		}
 		else
 			memcpy(cmd->u.word[wnum],t->word, WORD_SIZE);
@@ -334,7 +354,7 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			if (len < 0)
 			{
 				if (subshell)
-					error(1,0, "Subshell not terminated");
+					error(1,0, "Subshell not terminated:%d", *line_num);
 				else return NULL;	
 			}
 			
@@ -352,18 +372,19 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				pos= temp;
 			if (type==WORD)
 			{
-				cmd = checked_malloc(sizeof(struct command));
+				if (cmd == NULL)
+					cmd = checked_malloc(sizeof(struct command));
 				pos = make_simple_cmd(get_next_byte, fp, 
-					line_buffer, len, pos, cmd, 0);
+					line_buffer, len, pos, cmd, subshell, line_num);
 			}
 			else if (type==IN || type==OUT)
 			{
-				error(1,0, "I/O not affiliated with simple command");
+				error(1,0, "I/O not affiliated with simple command: %d", *line_num);
 			} 
 			else if (type==AND || type==OR || type==PIPE || type == SEMI)
 			{
 				if (cmd == NULL)
-					error(1,0, "No left-hand operand");
+					error(1,0, "No left-hand operand: %d", *line_num);
 	
 				command_t tmp_cmd;
 				tmp_cmd = checked_malloc(sizeof(struct command));
@@ -383,12 +404,13 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				}
 				
 				while((pos = make_simple_cmd(get_next_byte, fp, line_buffer, 
-					len, pos,tmp_cmd->u.command[1], 0)) == -1)
+					len, pos,tmp_cmd->u.command[1], subshell, line_num)) == -1)
 				{
 					len = get_line(get_next_byte, fp, line_buffer);		
 					if (len == -1)
-						error(1,0, "Syntax Error");
+						error(1,0, "Syntax Error: %d", *line_num);
 					pos = 0;
+					*line_num += 1;
 				}
 
 				switch(type)
@@ -411,7 +433,7 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			else if (type == OPAREN)
 			{
 				if (cmd != NULL)
-					error(1,0,"Non empty cmd preceding '('");	
+					error(1,0,"Non empty cmd preceding '(' :%d", *line_num);	
 				cmd = checked_malloc(sizeof(struct command));
 				cmd->status = -1;
 				cmd->type = SUBSHELL_COMMAND;
@@ -428,13 +450,13 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				else if (subshell > 1)
 					subshell--;
 				else
-					error(1,0,"Unmatched ')'");
+					error(1,0,"Unmatched ')':%d", *line_num);
 			}
 			else if (type == COMMENT)
 				done = FALSE;
 			else if (type == TICK)
 			{
-				error(1,0,"Invalid symbol");
+				error(1,0,"Invalid symbol :%d", *line_num);
 			}
 		}
 	}
