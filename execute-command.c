@@ -36,16 +36,27 @@ execute_command (command_t c, int time_travel)
 void
 exec_simple(command_t cmd)
 {
+	FILE *fin = stdin;
+	FILE *fout = stdout;
 	pid_t child = fork();	// Call fork and store pid into child
 	
 	if (child == 0)	// If we are the child
 	{
+		// Set up I/O redirects
+		if (cmd->input != NULL)
+			fin = freopen(cmd->input, "r", stdin);
+		if (cmd->output != NULL)
+			fout = freopen(cmd->output, "w", stdout);
+
 		// exec system call with simple command parameters
 		if (execvp(cmd->u.word[0], cmd->u.word) == -1)
 			error(1,0, "command not successful");
+		fclose(fin);
+		fclose(fout);
 	}
 	else if (child > 0)	// If we are the parent, wait for child to exit
 	{
 		waitpid(child, &cmd->status, 0);
+		//printf("Exit Status: %d\n",cmd->status);
 	}
 }
