@@ -271,6 +271,10 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	int i = 0, wnum = 0;
 	token* t = checked_malloc(sizeof(token));
 	
+	if( get_next_byte == 0 && fp == 0)
+	{
+	}
+	
 	if (num_words == 0)
 	{
 		return -1;
