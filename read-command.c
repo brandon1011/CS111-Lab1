@@ -1,6 +1,6 @@
 /*
 	Jordi Burbano 	UID: 204-076-325
-	Brandon Wu	UID: 603-859-458
+	Brandon Wu		UID: 603-859-458
 */
 // UCLA CS 111 Lab 1 command reading
 #include "command.h"
@@ -19,6 +19,7 @@
 #include "alloc.h"
 #define BUFFER_SIZE 1024
 #define WORD_SIZE		100
+
 typedef enum
 {
 	TRUE,
@@ -73,7 +74,7 @@ is_space(char c)
 		default: return FALSE;
 	}
 };
-/* Determine if special character */
+/* Determine if argument c is special character */
 inline boolean
 is_special(char c)
 {
@@ -93,6 +94,8 @@ is_special(char c)
 	}
 };
 
+/* Returns the type of the token at position pos in line_buffer of length
+	len. RETURNS INVALID if no valid token (e.g. white space) */
 inline token_type
 get_token_type(char* line_buffer, int pos, int len)
 {
@@ -129,10 +132,10 @@ get_token_type(char* line_buffer, int pos, int len)
 }
 
 /* GET_TOKEN
-	Given line buffer and current pos within buffer, 
-	get the next token in that line
-	Return position of next char in buffer after end
-	of token t. If no token exists, return INVALID */
+	Given line buffer and current pos within buffer, get the next token 
+	in that line Return position of next char in buffer after end
+	of token t. If no token exists, report INVALID token.
+	RETURNS next unvisited pos in line_buffer, or len if EOL */
 int
 get_token(char* line_buffer, int len, int pos, token* t)
 {
@@ -222,6 +225,8 @@ count_words(char* line_buffer, int len)
 	}
 	return num;
 }
+
+/* Get I/O redirect file beginning at pos, store the word into command_t */
 int
 get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
 {
@@ -252,6 +257,10 @@ get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
 		error(1,0,"I/O redirect cannot be followed by > 1 word");
 	return i;
 }
+
+/* If next cmd is a simple command, create the cmd starting at pos until the
+end of the simple cmd (i.e newline, pipe, sequence, etc). RETURN last
+visited position in line_buffer */
 int
 make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		int len, int pos, command_t cmd, int subshell)
