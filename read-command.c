@@ -1,21 +1,23 @@
 /*
-	Jordi Burbano UID: 204-076-325
-	Brandon Wu		UID: 603-859-458
+	Jordi Burbano 	UID: 204-076-325
+	Brandon Wu	UID: 603-859-458
 */
 // UCLA CS 111 Lab 1 command reading
 #include "command.h"
 #include "command-internals.h"
 #include <error.h>
 /* TODO: 	
-		1. 	Proper error msg format
+		1. Proper error msg format
 		2.	Better documentation
+		3. Detect single & as an ERROR
+	FIXME:
+		1. Subshell commands across multiple lines only picks up last word	
 */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include "alloc.h"
 #define BUFFER_SIZE 1024
-#define WORD_COUNT 	10
 #define WORD_SIZE		100
 typedef enum
 {
@@ -25,17 +27,17 @@ typedef enum
 
 typedef enum
 {
-	WORD,				// A word not including whitespace or other token
-	OPAREN,			// Left paren  (
-	CPAREN,			// Right paren )
-	AND,				// &&
-	OR,					// ||
-	PIPE,				// |
-	SEMI,				// ;
-	IN,					// <
-	OUT,				// >
+	WORD,			// A word not including whitespace or other token
+	OPAREN,		// Left paren  (
+	CPAREN,		// Right paren )
+	AND,			// &&
+	OR,			// ||
+	PIPE,			// |
+	SEMI,			// ;
+	IN,			// <
+	OUT,			// >
 	COMMENT,		// #
-	TICK,				// `
+	TICK,			// `
 	INVALID,		// Invalid token (e.g. <<<)
 } token_type;
 
@@ -47,7 +49,7 @@ typedef struct
 
 struct command_node
 {
-	command_t 						cmd;
+	command_t 					cmd;
 	struct command_node* 	nxt;
 };
 
@@ -58,8 +60,7 @@ struct command_stream
 };
 
 /* Determine if character is white space */
-inline
-boolean 
+inline boolean 
 is_space(char c)
 {
 	switch(c)
@@ -73,8 +74,7 @@ is_space(char c)
 	}
 };
 /* Determine if special character */
-inline
-boolean
+inline boolean
 is_special(char c)
 {
 	switch(c)
@@ -93,8 +93,7 @@ is_special(char c)
 	}
 };
 
-inline
-token_type
+inline token_type
 get_token_type(char* line_buffer, int pos, int len)
 {
 	char c = line_buffer[pos];	
@@ -129,11 +128,11 @@ get_token_type(char* line_buffer, int pos, int len)
 	return INVALID;
 }
 
-/* 	GET_TOKEN
-		Given line buffer and current pos within buffer, 
-		get the next token in that line
-		Return position of next char in buffer after end
-		of token t. If no token exists, return INVALID */
+/* GET_TOKEN
+	Given line buffer and current pos within buffer, 
+	get the next token in that line
+	Return position of next char in buffer after end
+	of token t. If no token exists, return INVALID */
 int
 get_token(char* line_buffer, int len, int pos, token* t)
 {
@@ -152,9 +151,8 @@ get_token(char* line_buffer, int len, int pos, token* t)
 		t->type = WORD;
 		t->word = checked_malloc(WORD_SIZE);
 
-		//t->word[0] = c;
 		while (pos<len && is_space(c=line_buffer[pos]) == FALSE  
-						&& is_special(c) == FALSE && word_len < WORD_SIZE)
+				&& is_special(c) == FALSE && word_len < WORD_SIZE)
 		{
 			t->word[word_len] = c;
 			word_len++;
@@ -227,8 +225,8 @@ count_words(char* line_buffer, int len)
 int
 get_io(char* line_buffer, int len, int pos, command_t cmd, int input)
 {
-	/* 	if input = 1, the redirect is input
-			if input = 0, the redirect is an output	*/
+	/* if input = 1, the redirect is input
+		if input = 0, the redirect is an output	*/
 	int i;
 	char* word = checked_malloc(WORD_SIZE);
 	token* t = checked_malloc(sizeof(token));
@@ -284,7 +282,8 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		wnum++;
 		i = get_token(line_buffer, len, i, t);
 	}
-	while ((wnum<num_words && t->type==WORD) || t->type==IN || t->type==OUT);
+	while ((wnum<num_words && t->type==WORD) || 
+		t->type==IN || t->type==OUT);
 	
 	token_type type = t->type;
 	free(t->word);
@@ -301,10 +300,16 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	}
 }	
 
+/* Parse the next command not yet read from the file stream and return it */
 command_t
 make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		int len, int* line_num, int subshell)
 {
+	/* subshell = 1 if current command is a SUBSHELL_COMMAND and should only
+		terminate on a close paren 
+		line_num tracks the current line number in the filestream 
+		len stores the length of the currently active line buffer, len=0
+		when there is no valid line stored in line_buffer (start of read) */
 	boolean done = FALSE;
 	command_t cmd = NULL;
 	token* t = checked_malloc(sizeof(token));
@@ -339,8 +344,8 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			if (type==WORD)
 			{
 				cmd = checked_malloc(sizeof(struct command));
-				pos = make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
-						cmd, 0);
+				pos = make_simple_cmd(get_next_byte, fp, 
+					line_buffer, len, pos, cmd, 0);
 			}
 			else if (type==IN || type==OUT)
 			{
@@ -440,8 +445,6 @@ make_command_stream (int (*get_next_byte) (void *),
 	stream->list = checked_malloc(sizeof(struct command_node));
 	struct command_node* walk = stream->list;
 
-	//while ((walk->cmd = make_command(get_next_byte,
-				//get_next_byte_argument, line_buffer, BUFFER_SIZE, line)) != NULL) 
 	while ((walk->cmd = make_command(get_next_byte,
 				get_next_byte_argument, line_buffer, 0, line, 0)) != NULL)
 	{
@@ -449,10 +452,10 @@ make_command_stream (int (*get_next_byte) (void *),
 			walk = walk->nxt;
 			num_cmds++;
 	}
-	//error (1, 0, "command make command stream not yet implemented");
   return stream;
 }
-
+/* Read from a command stream, one command at a time until command stream
+	is empty (returns NULL) */
 command_t
 read_command_stream (command_stream_t s)
 {
@@ -460,7 +463,6 @@ read_command_stream (command_stream_t s)
 	struct command_node* temp = s->list;
 	if (s->list != NULL)
 		s->list = s->list->nxt;
-  //error (1, 0, "command reading not yet implemented");
 	free(temp);
   return cmd;
 }
