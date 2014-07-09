@@ -34,6 +34,10 @@ execute_command (command_t c, int time_travel)
   /* FIXME: Replace this with your implementation.  You may need to
      add auxiliary functions and otherwise modify the source code.
      You can also use external functions defined in the GNU C Library.  */
+      if( time_travel == 0 )
+    {
+    }
+     
 	switch (c->type)
 	{
 		case SIMPLE_COMMAND:
