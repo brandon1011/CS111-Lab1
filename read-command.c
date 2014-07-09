@@ -161,6 +161,7 @@ get_token(char* line_buffer, int len, int pos, token* t)
 			word_len++;
 			pos++;
 		}
+		t->word[word_len] = '\0';
 	}
 	else	// If it is a valid special token
 	{

@@ -9,8 +9,10 @@
 
 #include <error.h>
 
-/* FIXME: You may need to add #include directives, macro definitions,
-   static function definitions, etc.  */
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <unistd.h>
 
 int
 command_status (command_t c)
@@ -24,5 +26,23 @@ execute_command (command_t c, int time_travel)
   /* FIXME: Replace this with your implementation.  You may need to
      add auxiliary functions and otherwise modify the source code.
      You can also use external functions defined in the GNU C Library.  */
-  error (1, 0, "command execution not yet implemented");
+		
+	error (1, 0, "command execution not yet implemented");
+
+}
+
+void
+exec_simple(command_t cmd)
+{
+	pid_t child = fork();
+	
+	if (child == 0)
+	{
+		/*if (execvp() == -1)
+			error(1,0, "command not successful");*/
+	}
+	else if (child > 0)
+	{
+		waitpid(child, &cmd->status, 0);
+	}
 }
