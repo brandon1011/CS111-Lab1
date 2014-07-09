@@ -26,6 +26,7 @@ command_status (command_t c)
 
 void exec_pipe(command_t cmd);
 void exec_simple(command_t c);
+void exec_and(command_t cmd, int time_travel);
 
 void
 execute_command (command_t c, int time_travel)
@@ -46,6 +47,9 @@ execute_command (command_t c, int time_travel)
 			break;
 		case PIPE_COMMAND:
 			exec_pipe(c);
+		case AND_COMMAND:
+		          exec_and(c,0);
+		          break;
 		default:;
 	}
 	//error (1, 0, "command execution not yet implemented");
@@ -95,4 +99,18 @@ exec_simple(command_t cmd)
 		waitpid(child, &cmd->status, 0);
 		//printf("Exit Status: %d\n",cmd->status);
 	}
+}
+
+/* Executes AND_TYPE command */
+void exec_and(command_t cmd, int time_travel)
+{
+
+
+      execute_command( cmd->u.command[0], time_travel );
+
+  if( (cmd->u.command[0]->status) == 0)
+    {
+      execute_command( cmd->u.command[1], time_travel );
+    }
+
 }
