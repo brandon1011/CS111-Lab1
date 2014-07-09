@@ -9,10 +9,14 @@
 
 #include <error.h>
 
+#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
+
+#define TEMP "temp.out"
 
 int
 command_status (command_t c)
@@ -20,6 +24,7 @@ command_status (command_t c)
   return c->status;
 }
 
+void exec_pipe(command_t cmd);
 void exec_simple(command_t c);
 
 void
@@ -34,14 +39,33 @@ execute_command (command_t c, int time_travel)
 			exec_simple(c);
 			break;
 		case SEQUENCE_COMMAND:
-			c->status = 0;
 			execute_command(c->u.command[0],0);
 			execute_command(c->u.command[1],0);
+			c->status = (c->u.command[0]->status)&&(c->u.command[1]->status);
+			//printf("Exit status: %d\n",c->status);
 			break;
+		case PIPE_COMMAND:
+			exec_pipe(c);
 		default:;
 	}
 	//error (1, 0, "command execution not yet implemented");
 
+}
+
+/* Execute a pipe command */
+void
+exec_pipe(command_t cmd)
+{
+	cmd->u.command[0]->output = malloc((int)sizeof(TEMP));
+	cmd->u.command[1]->input = malloc((int)sizeof(TEMP));
+	//cmd->u.command[1]->input = cmd->u.command[0]->output;
+	
+	memcpy(cmd->u.command[0]->output, TEMP, (int)sizeof(TEMP));
+	memcpy(cmd->u.command[1]->input, TEMP, (int)sizeof(TEMP));
+	if (cmd->output != NULL)
+		cmd->u.command[1]->output = cmd->output;
+	execute_command(cmd->u.command[0],0);
+	execute_command(cmd->u.command[1],0);
 }
 
 /* Executes a simple command*/
