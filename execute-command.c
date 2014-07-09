@@ -20,28 +20,31 @@ command_status (command_t c)
   return c->status;
 }
 
+void exec_simple(command_t c);
+
 void
 execute_command (command_t c, int time_travel)
 {
   /* FIXME: Replace this with your implementation.  You may need to
      add auxiliary functions and otherwise modify the source code.
      You can also use external functions defined in the GNU C Library.  */
-		
-	error (1, 0, "command execution not yet implemented");
+	exec_simple(c);	
+	//error (1, 0, "command execution not yet implemented");
 
 }
 
 void
 exec_simple(command_t cmd)
 {
-	pid_t child = fork();
+	pid_t child = fork();	// Call fork and store pid into child
 	
-	if (child == 0)
+	if (child == 0)	// If we are the child
 	{
-		/*if (execvp() == -1)
-			error(1,0, "command not successful");*/
+		// exec system call with simple command parameters
+		if (execvp(cmd->u.word[0], cmd->u.word) == -1)
+			error(1,0, "command not successful");
 	}
-	else if (child > 0)
+	else if (child > 0)	// If we are the parent, wait for child to exit
 	{
 		waitpid(child, &cmd->status, 0);
 	}
