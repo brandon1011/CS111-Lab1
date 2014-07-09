@@ -28,11 +28,23 @@ execute_command (command_t c, int time_travel)
   /* FIXME: Replace this with your implementation.  You may need to
      add auxiliary functions and otherwise modify the source code.
      You can also use external functions defined in the GNU C Library.  */
-	exec_simple(c);	
+	switch (c->type)
+	{
+		case SIMPLE_COMMAND:
+			exec_simple(c);
+			break;
+		case SEQUENCE_COMMAND:
+			c->status = 0;
+			execute_command(c->u.command[0],0);
+			execute_command(c->u.command[1],0);
+			break;
+		default:;
+	}
 	//error (1, 0, "command execution not yet implemented");
 
 }
 
+/* Executes a simple command*/
 void
 exec_simple(command_t cmd)
 {
