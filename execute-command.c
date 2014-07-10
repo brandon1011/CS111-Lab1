@@ -28,14 +28,12 @@ command_status (command_t c)
 void exec_pipe(command_t cmd);
 void exec_simple(command_t c);
 void exec_and(command_t cmd, int time_travel);
+void exec_or(command_t cmd);
 
 void
 execute_command (command_t c, int time_travel)
 {
-  /* FIXME: Replace this with your implementation.  You may need to
-     add auxiliary functions and otherwise modify the source code.
-     You can also use external functions defined in the GNU C Library.  */
-       if( time_travel == 0 )
+    if( time_travel == 0 )
     {
     }
      
@@ -56,13 +54,14 @@ execute_command (command_t c, int time_travel)
 		case AND_COMMAND:
 			exec_and(c,0);
 			break;
+		case OR_COMMAND:
+			exec_or(c);
+			break;
 		case SUBSHELL_COMMAND:
 			execute_command(c->u.subshell_command,0);
 			c->status = c->u.subshell_command->status;
 		default:;
 	}
-	//error (1, 0, "command execution not yet implemented");
-
 }
 
 /* Execute a pipe command */
@@ -125,12 +124,12 @@ exec_simple(command_t cmd)
 	else if (child > 0)	// If we are the parent, wait for child to exit
 	{
 		waitpid(child, &cmd->status, 0);
-		//printf("Exit Status: %d\n",cmd->status);
 	}
 }
 
 /* Executes AND_TYPE command */
-void exec_and(command_t cmd, int time_travel)
+inline void
+exec_and(command_t cmd, int time_travel)
 {
 	execute_command( cmd->u.command[0], time_travel );
 	if((cmd->u.command[0]->status) == 0)
@@ -139,8 +138,18 @@ void exec_and(command_t cmd, int time_travel)
 		cmd->status = cmd->u.command[1]->status;
 	}
 	else
-	{
 		cmd->status = cmd->u.command[0]->status;
-	}
+}
 
+inline void
+exec_or(command_t cmd)
+{
+	execute_command(cmd->u.command[0],0);
+	if (cmd->u.command[0]->status != 0)
+	{
+		execute_command(cmd->u.command[1],0);
+		cmd->status = cmd->u.command[1]->status;
+	}
+	else
+		cmd->status = cmd->u.command[0]->status;
 }
