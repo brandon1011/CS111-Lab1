@@ -16,7 +16,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define TEMP "temp.out"
+#define TEMP0 "temp0.out"
+#define TEMP1 "temp1.out"
 
 int
 command_status (command_t c)
@@ -51,9 +52,13 @@ execute_command (command_t c, int time_travel)
 			break;
 		case PIPE_COMMAND:
 			exec_pipe(c);
+			break;
 		case AND_COMMAND:
-		          exec_and(c,0);
-		          break;
+			exec_and(c,0);
+			break;
+		case SUBSHELL_COMMAND:
+			execute_command(c->u.subshell_command,0);
+			c->status = c->u.subshell_command->status;
 		default:;
 	}
 	//error (1, 0, "command execution not yet implemented");
@@ -64,14 +69,33 @@ execute_command (command_t c, int time_travel)
 void
 exec_pipe(command_t cmd)
 {
-	cmd->u.command[0]->output = malloc((int)sizeof(TEMP));
-	cmd->u.command[1]->input = malloc((int)sizeof(TEMP));
-	//cmd->u.command[1]->input = cmd->u.command[0]->output;
-	
-	memcpy(cmd->u.command[0]->output, TEMP, (int)sizeof(TEMP));
-	memcpy(cmd->u.command[1]->input, TEMP, (int)sizeof(TEMP));
-	if (cmd->output != NULL)
+	/* Implements a | b as a > tempfile; b < tempfile */
+	if (cmd->output == NULL)
+	{
+		cmd->u.command[0]->output = malloc((int)sizeof(TEMP0));
+		cmd->u.command[1]->input = malloc((int)sizeof(TEMP0));
+		memcpy(cmd->u.command[0]->output, TEMP0, (int)sizeof(TEMP0));
+		memcpy(cmd->u.command[1]->input, TEMP0, (int)sizeof(TEMP0));
+	}
+	else if (strcmp(cmd->output,TEMP0) == 0)
+	{
 		cmd->u.command[1]->output = cmd->output;
+
+		cmd->u.command[0]->output = malloc((int)sizeof(TEMP1));
+		cmd->u.command[1]->input = malloc((int)sizeof(TEMP1));
+		memcpy(cmd->u.command[0]->output, TEMP1, (int)sizeof(TEMP1));
+		memcpy(cmd->u.command[1]->input, TEMP1, (int)sizeof(TEMP1));
+
+	}
+	else if (strcmp(cmd->output,TEMP1) == 0)
+	{
+		cmd->u.command[1]->output = cmd->output;
+
+		cmd->u.command[0]->output = malloc((int)sizeof(TEMP0));
+		cmd->u.command[1]->input = malloc((int)sizeof(TEMP0));
+		memcpy(cmd->u.command[0]->output, TEMP0, (int)sizeof(TEMP0));
+		memcpy(cmd->u.command[1]->input, TEMP0, (int)sizeof(TEMP0));
+	}
 	execute_command(cmd->u.command[0],0);
 	execute_command(cmd->u.command[1],0);
 }
@@ -108,13 +132,15 @@ exec_simple(command_t cmd)
 /* Executes AND_TYPE command */
 void exec_and(command_t cmd, int time_travel)
 {
-
-
-      execute_command( cmd->u.command[0], time_travel );
-
-  if( (cmd->u.command[0]->status) == 0)
-    {
-      execute_command( cmd->u.command[1], time_travel );
-    }
+	execute_command( cmd->u.command[0], time_travel );
+	if((cmd->u.command[0]->status) == 0)
+	{
+		execute_command(cmd->u.command[1], time_travel );
+		cmd->status = cmd->u.command[1]->status;
+	}
+	else
+	{
+		cmd->status = cmd->u.command[0]->status;
+	}
 
 }
