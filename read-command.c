@@ -295,7 +295,7 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		cmd->u.word = w;
 		num_words +=wnum;
 	}
-	else // For a new simple cmd
+	else // For a new simple cmdBre
 	{
 		cmd->type = SIMPLE_COMMAND;
 		cmd->u.word = checked_malloc(sizeof(void*)*num_words+1);
@@ -448,11 +448,7 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			}
 			else if (type == CPAREN)
 			{
-				if (subshell== 1)
-				{
-					return cmd;
-				}
-				else if (subshell > 1)
+				if (subshell >= 1)
 					subshell--;
 				else
 					error(1,0,"Unmatched ')':%d", *line_num);

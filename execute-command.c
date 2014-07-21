@@ -1,5 +1,5 @@
 /*
-	Jordi Burbano UID: 204-076-325
+	Jordi Burbano	UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 */
 // UCLA CS 111 Lab 1 command execution
@@ -16,8 +16,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define TEMP0 "temp0.out"
-#define TEMP1 "temp1.out"
+#define TEMP0 ".temp0.out"
+#define TEMP1 ".temp1.out"
 
 int
 command_status (command_t c)
