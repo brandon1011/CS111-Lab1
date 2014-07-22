@@ -26,7 +26,7 @@ command_status (command_t c)
 }
 
 void exec_pipe(command_t cmd);
-void exec_simple(command_t c);
+void exec_simple(command_t c, int time_travel);
 void exec_and(command_t cmd, int time_travel);
 void exec_or(command_t cmd);
 
@@ -40,11 +40,11 @@ execute_command (command_t c, int time_travel)
 	switch (c->type)
 	{
 		case SIMPLE_COMMAND:
-			exec_simple(c);
+			exec_simple(c, time_travel);
 			break;
 		case SEQUENCE_COMMAND:
-			execute_command(c->u.command[0],0);
-			execute_command(c->u.command[1],0);
+			execute_command(c->u.command[0],time_travel);
+			execute_command(c->u.command[1],time_travel);
 			c->status = (c->u.command[0]->status)&&(c->u.command[1]->status);
 			//printf("Exit status: %d\n",c->status);
 			break;
@@ -101,7 +101,7 @@ exec_pipe(command_t cmd)
 
 /* Executes a simple command*/
 void
-exec_simple(command_t cmd)
+exec_simple(command_t cmd, int time_travel)
 {
 	FILE *fin = stdin;
 	FILE *fout = stdout;
@@ -123,7 +123,8 @@ exec_simple(command_t cmd)
 	}
 	else if (child > 0)	// If we are the parent, wait for child to exit
 	{
-		waitpid(child, &cmd->status, 0);
+		if (time_travel == 0)
+			waitpid(child, &cmd->status, 0);
 	}
 }
 
