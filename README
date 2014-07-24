@@ -1,9 +1,9 @@
 	Jordi Burbano UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 
-***************************************************************************
-*															CS 111 Lab 1A																*
-***************************************************************************
+****************************************************************************
+*										CS 111 Lab 1C						    				*
+****************************************************************************
 0. CONTENTS
 		1. Implementation Details	................. 11
 		2. Limitations ............................ 71
@@ -68,5 +68,76 @@ cmd->u.command[1] are found by calling make_cmd_aux recursively.
 The contents of this command are determined recursively, until a ')' is 
 discovered or EOF.
 
+PART B:
+	Execute command works trivially for all commands once execute command
+for a SIMPLE_COMMAND is estabilished. For a SIMPLE_COMMAND, the execution
+calls "exec_simple" which performs a fork() system call. For the serial
+case (time_travel == 0), the parent waits on the child pid to finish,
+storing the exit status of the child it its appropriate location.
+
+	The child calls an exec() system call to change the program of execution
+to that of the command that is called. This approach works well for 
+the parallelization case.
+
+	The AND and OR command recursively calls the execute_command function,
+either one or two recursive calls is made depending on the type of command
+and the exit status of the first executed command (if exit is 0 for AND
+or exit is 1 for OR). Sequence command also works similarly.
+
+	The PIPE_COMMAND is handled by a special case. Consider the following
+pipe command: A | B. This is interpreted as A > temp; B < temp. Therefore,
+for a large stream of pipe commands, e.g. A | B | C | D, we utilize
+two temporary files and interleave them so there is no R/W thrashing.
+
+	The SUBSHELL_COMMAND simply calls the execute command function
+recursively on its subshell command.
+
+PART C:
+	PART C introduces support for "time_travel" mode. The basic idea here
+is that when the fork() system call is made, the parent need not wait for
+the child to terminate, it simply moves onto executing the next command.
+The only time a wait occurs is when a child should wait on another child. 
+In this case, the entire thread of execution enters a critical section, 
+so the new process is not forked until the one it is blocked on finishes.
+
+   This is implemented using a dependency table held by the main function
+but manipulated by sub-routines in execute_command.c. The Dependency table
+is implemented as a linked list with the following structure:
+
+		  struct depend_node
+		  {
+			  depend_node_t	nxt;
+			  char*	 			handle;
+			  pid_t 				pid;
+		  };
+
+	The handle member contains a string of the file handle name. The pid
+field holds the pid that the current command is blocked on (i.e. it should
+wait for pid to exit before forking its own child).
+
 2. LIMITATIONS
 
+The following limitations are present within the design:
+
+1. Under some very special cases that have not been completely identified,
+syntax errors are reported at lines > than the actual line of the error.
+
+2. When a nested subshell is used, the inner subshell command must be
+contained within a single line. For example,
+	(
+		echo hello
+	)
+	is valid, and so is
+	( 
+		( echo hello ) 
+	)
+	but 
+	(
+		(
+			echo hello
+		)
+	)
+	is a syntax error
+
+3. When in time_travel mode, sometimes the process will exit before all
+commands are done.

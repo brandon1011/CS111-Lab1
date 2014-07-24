@@ -20,11 +20,13 @@
 #define TEMP0 ".temp0.out"
 #define TEMP1 ".temp1.out"
 
+// Delete the dynamic content of a command
+inline void delete_command(command_t c);
+
 /* Determine if 2 strings are equal*/
 inline int
 equals(char* s1, char* s2)
 {
-	//printf("S1: %s, S2: %s", s1, s2);
 	do {
 		if (*(s1++) != *(s2++))
 			return 0;
@@ -34,19 +36,20 @@ equals(char* s1, char* s2)
 depend_node_t
 add_dependency(command_t c, depend_node_t list)
 {	
-	char *resource;
+	char *resource = checked_malloc(WORD_SIZE);
 	depend_node_t prev = list;
 	list = list->nxt;
+
 	if (c->output != NULL)
-		resource = c->output;
-	else resource = c->input;
+		memcpy(resource, c->output, WORD_SIZE);
+	else memcpy(resource, c->input, WORD_SIZE);//resource = c->input;
 	
 	while(list != NULL)
 	{
 		if (equals(resource, list->handle))
 		{
 			//printf("Dependency on %s\n", resource);
-			list->handle = resource;
+			free(resource);
 			return list;
 		}
 		prev=list;
@@ -103,6 +106,7 @@ execute_command (command_t c, int time_travel, depend_node_t dpn_list)
 			c->status = c->u.subshell_command->status;
 		default:;
 	}
+	delete_command(c);
 }
 
 /* Execute a pipe command */
@@ -209,4 +213,38 @@ exec_or(command_t cmd, int time_travel, depend_node_t dpn_list)
 	}
 	else
 		cmd->status = cmd->u.command[0]->status;
+}
+
+inline void
+delete_command(command_t c)
+{
+	char** walk;
+	char** temp;
+	switch(c->type)
+	{
+		case SIMPLE_COMMAND:
+			walk = c->u.word;
+			while (*walk)
+			{
+				temp = walk;
+				++walk;
+				if (*temp != NULL)
+					free(*temp);
+			}
+			free(c->u.word);
+			if (c->output != NULL)
+				free(c->output);
+			if (c->input != NULL)
+				free(c->input);
+			return;
+			case AND_COMMAND:
+			case OR_COMMAND:
+			case SEQUENCE_COMMAND:
+			case PIPE_COMMAND:
+				free(c->u.command[0]);
+				free(c->u.command[1]);
+				break;
+			case SUBSHELL_COMMAND:
+				free(c->u.subshell_command);
+	}
 }

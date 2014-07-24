@@ -71,7 +71,7 @@ is_space(char c)
 		case '\n':
 		case '\v':
 		case	'\f': return TRUE;
-		default: return FALSE;
+		default:    return FALSE;
 	}
 };
 /* Determine if argument c is special character */
@@ -118,7 +118,7 @@ get_token_type(char* line_buffer, int pos, int len)
 	{
 		if(pos<len-1 && line_buffer[pos+1] == '&')
 			return AND;
-		else return INVALID;		// Invalid if single &
+		else error(1, 0, "Syntax error with &\n");;		// Invalid if single &
 	}
 	if (c == '|')
 	{
@@ -484,7 +484,9 @@ make_command_stream (int (*get_next_byte) (void *),
 			walk = walk->nxt;
 			num_cmds++;
 	}
-  return stream;
+  	free(line_buffer);
+	free(line);
+	return stream;
 }
 /* Read from a command stream, one command at a time until command stream
 	is empty (returns NULL) */
@@ -498,3 +500,4 @@ read_command_stream (command_stream_t s)
 	free(temp);
   return cmd;
 }
+

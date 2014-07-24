@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <stdlib.h>
 
 #include "command.h"
 #include "alloc.h"
@@ -73,20 +74,25 @@ main (int argc, char **argv)
 	}
       else
 	{
+	  if (last_command !=NULL)
+			free(last_command);
 	  last_command = command;
 	  execute_command (command, time_travel, depend_table);
 	}
     }
-  /*if (0) // time_travel
+  // Deallocate the dependency table
+  if (time_travel) // time_travel
   {
+		depend_node_t temp = depend_table;
 		depend_table = depend_table->nxt;
+		free(temp);
 		while (depend_table != NULL)
 		{
-			//printf("waiting on %d\n", depend_table->pid);
-			if (depend_table->pid > 0)
-				waitpid(depend_table->pid, 0,0);
+			temp = depend_table;
 			depend_table = depend_table->nxt;
+			free(temp->handle);
+			free(temp);
 		}
-  }*/
+  }
   return print_tree || !last_command ? 0 : command_status (last_command);
 }
