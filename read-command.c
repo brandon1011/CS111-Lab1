@@ -282,20 +282,8 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	}
 	if (subshell && (cmd->type == SIMPLE_COMMAND))
 	{
-		/* For a multi-line simple command */
-		/*
-		char **w = cmd->u.word;
-		while(*w)
-		{
-			wnum++;	// Count num words before in simple cmd
-			w++;
-		}
-		// Extend the space in cmd for words by num_words
-		w = checked_malloc(sizeof(void*)*(wnum+num_words+1));
-		memcpy(w,cmd->u.word, sizeof(void*)*(wnum));	
-		free(cmd->u.word);
-		cmd->u.word = w;
-		num_words +=wnum; */
+		// If there is another simple command, it should be treated as
+		// ( cmd1; cmd2)
 		char** temp = cmd->u.word;
 		cmd->type = SEQUENCE_COMMAND;
 		cmd->u.command[0] = checked_malloc(sizeof(struct command));
@@ -311,6 +299,20 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		cmd->u.command[1]->status = -1;
 		return make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
 			cmd->u.command[1], subshell, line_num);
+	}
+	else if (subshell && cmd->type == SEQUENCE_COMMAND)
+	{
+		/* For nested, multi-line subshell commands
+			Example:	( a\n b\n c) should be treated as (a; b; c) */
+		command_t tmp_cmd = cmd->u.command[1];
+		cmd->u.command[1] = checked_malloc(sizeof(struct command));
+		cmd->u.command[1]->type = SEQUENCE_COMMAND;
+		cmd->u.command[1]->status=-1;
+		cmd->u.command[1]->u.command[0] = tmp_cmd;
+		cmd->u.command[1]->u.command[1] = checked_malloc(sizeof(struct command));
+		cmd->u.command[1]->u.command[1]->status = -1;
+		return make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
+			cmd->u.command[1]->u.command[1], subshell, line_num);
 	}
 	else // For a new simple cmd
 	{
