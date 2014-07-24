@@ -119,7 +119,7 @@ get_token_type(char* line_buffer, int pos, int len)
 	{
 		if(pos<len-1 && line_buffer[pos+1] == '&')
 			return AND;
-		else error(1, 0, "Syntax error with &\n");;		// Invalid if single &
+		else error(1, 0, "Single ampersand is invalid\n");;		// Invalid if single &
 	}
 	if (c == '|')
 	{
@@ -378,7 +378,7 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			if (len < 0)
 			{
 				if (subshell)
-					error(1,0, "Subshell not terminated:%d", *line_num);
+					error(1,0, "%d: Subshell not terminated", *line_num);
 				else return NULL;	
 			}
 			
@@ -403,12 +403,12 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			}
 			else if (type==IN || type==OUT)
 			{
-				error(1,0, "I/O not affiliated with simple command: %d", *line_num);
+				error(1,0, "%d: I/O not affiliated with simple command", *line_num);
 			} 
 			else if (type==AND || type==OR || type==PIPE || type == SEMI)
 			{
 				if (cmd == NULL)
-					error(1,0, "No left-hand operand: %d", *line_num);
+					error(1,0, "%d: No left-hand operand", *line_num);
 	
 				command_t tmp_cmd;
 				tmp_cmd = checked_malloc(sizeof(struct command));
@@ -432,7 +432,7 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				{
 					len = get_line(get_next_byte, fp, line_buffer);		
 					if (len == -1)
-						error(1,0, "Syntax Error: %d", *line_num);
+						error(1,0, "%d: Syntax Error", *line_num);
 					pos = 0;
 					*line_num += 1;
 				}
@@ -457,7 +457,7 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			else if (type == OPAREN)
 			{
 				if (cmd != NULL)
-					error(1,0,"Non empty cmd preceding '(' :%d", *line_num);	
+					error(1,0,"%d: Non empty cmd preceding '('", *line_num);	
 				cmd = checked_malloc(sizeof(struct command));
 				cmd->status = -1;
 				cmd->type = SUBSHELL_COMMAND;
@@ -470,13 +470,13 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				if (subshell >= 1)
 					subshell--;
 				else
-					error(1,0,"Unmatched ')':%d", *line_num);
+					error(1,0,"%d: Unmatched ')'", *line_num);
 			}
 			else if (type == COMMENT)
 				done = FALSE;
 			else if (type == TICK)
 			{
-				error(1,0,"Invalid symbol :%d", *line_num);
+				error(1,0,"%d: Invalid symbol", *line_num);
 			}
 		}
 	}
