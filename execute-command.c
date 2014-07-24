@@ -6,7 +6,7 @@
 
 #include "command.h"
 #include "command-internals.h"
-
+#include "alloc.h"
 #include <error.h>
 
 #include <string.h>
@@ -16,9 +16,50 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#define WORD_SIZE 100
 #define TEMP0 ".temp0.out"
 #define TEMP1 ".temp1.out"
 
+/* Determine if 2 strings are equal*/
+inline int
+equals(char* s1, char* s2)
+{
+	//printf("S1: %s, S2: %s", s1, s2);
+	do {
+		if (*(s1++) != *(s2++))
+			return 0;
+	} while(*s1!='\0' || *s2!='\0');
+	return 1;
+}
+depend_node_t
+add_dependency(command_t c, depend_node_t list)
+{	
+	char *resource;
+	depend_node_t prev = list;
+	list = list->nxt;
+	if (c->output != NULL)
+		resource = c->output;
+	else resource = c->input;
+	
+	while(list != NULL)
+	{
+		if (equals(resource, list->handle))
+		{
+			//printf("Dependency on %s\n", resource);
+			list->handle = resource;
+			return list;
+		}
+		prev=list;
+		list=list->nxt;
+	}
+	//printf("No depdency for %s\n", resource);
+	list = checked_malloc(sizeof(struct depend_node));
+	list->handle = resource;
+	list->pid = -1;
+	list->nxt = NULL;
+	prev->nxt = list;
+	return list;
+}
 int
 command_status (command_t c)
 {
@@ -26,25 +67,25 @@ command_status (command_t c)
 }
 
 void exec_pipe(command_t cmd);
-void exec_simple(command_t c, int time_travel);
-void exec_and(command_t cmd, int time_travel);
-void exec_or(command_t cmd);
+void exec_simple(command_t c, int time_travel, depend_node_t dpn_list);
+void exec_and(command_t cmd, int time_travel, depend_node_t dpn_list);
+void exec_or(command_t cmd, int time_travel, depend_node_t dpn_list);
 
 void
-execute_command (command_t c, int time_travel)
+execute_command (command_t c, int time_travel, depend_node_t dpn_list)
 {
-    if( time_travel == 0 )
+    if( time_travel)
     {
     }
      
 	switch (c->type)
 	{
 		case SIMPLE_COMMAND:
-			exec_simple(c, time_travel);
+			exec_simple(c, time_travel, dpn_list);
 			break;
 		case SEQUENCE_COMMAND:
-			execute_command(c->u.command[0],time_travel);
-			execute_command(c->u.command[1],time_travel);
+			execute_command(c->u.command[0],time_travel, dpn_list);
+			execute_command(c->u.command[1],time_travel, dpn_list);
 			c->status = (c->u.command[0]->status)&&(c->u.command[1]->status);
 			//printf("Exit status: %d\n",c->status);
 			break;
@@ -52,13 +93,13 @@ execute_command (command_t c, int time_travel)
 			exec_pipe(c);
 			break;
 		case AND_COMMAND:
-			exec_and(c,0);
+			exec_and(c,time_travel, dpn_list);
 			break;
 		case OR_COMMAND:
-			exec_or(c);
+			exec_or(c, time_travel, dpn_list);
 			break;
 		case SUBSHELL_COMMAND:
-			execute_command(c->u.subshell_command,0);
+			execute_command(c->u.subshell_command,0, dpn_list);
 			c->status = c->u.subshell_command->status;
 		default:;
 	}
@@ -95,16 +136,28 @@ exec_pipe(command_t cmd)
 		memcpy(cmd->u.command[0]->output, TEMP0, (int)sizeof(TEMP0));
 		memcpy(cmd->u.command[1]->input, TEMP0, (int)sizeof(TEMP0));
 	}
-	execute_command(cmd->u.command[0],0);
-	execute_command(cmd->u.command[1],0);
+	execute_command(cmd->u.command[0],0, NULL);
+	execute_command(cmd->u.command[1],0, NULL);
 }
 
 /* Executes a simple command*/
 void
-exec_simple(command_t cmd, int time_travel)
+exec_simple(command_t cmd, int time_travel, depend_node_t dpn_list)
 {
 	FILE *fin = stdin;
 	FILE *fout = stdout;
+	if((cmd->output!=NULL || cmd->input!=NULL))
+	{
+		dpn_list = add_dependency(cmd, dpn_list);
+	}
+	pid_t blocked_on = dpn_list->pid;
+
+	if (time_travel && blocked_on >0)
+	{
+		/*printf("Blocked on %d Simple cmd: %s\n", 
+				(int) blocked_on, cmd->u.word[0]);*/
+		waitpid(blocked_on, &(cmd->status), 0);
+	}
 	pid_t child = fork();	// Call fork and store pid into child
 	
 	if (child == 0)	// If we are the child
@@ -123,19 +176,22 @@ exec_simple(command_t cmd, int time_travel)
 	}
 	else if (child > 0)	// If we are the parent, wait for child to exit
 	{
+		//printf("Simple cmd: %s, PID: %d\n", cmd->u.word[0], child);
 		if (time_travel == 0)
 			waitpid(child, &cmd->status, 0);
+		else if (dpn_list )
+			dpn_list->pid = child;
 	}
 }
 
 /* Executes AND_TYPE command */
 inline void
-exec_and(command_t cmd, int time_travel)
+exec_and(command_t cmd, int time_travel, depend_node_t dpn_list)
 {
-	execute_command( cmd->u.command[0], time_travel );
+	execute_command( cmd->u.command[0], time_travel, dpn_list);
 	if((cmd->u.command[0]->status) == 0)
 	{
-		execute_command(cmd->u.command[1], time_travel );
+		execute_command(cmd->u.command[1], time_travel, dpn_list);
 		cmd->status = cmd->u.command[1]->status;
 	}
 	else
@@ -143,12 +199,12 @@ exec_and(command_t cmd, int time_travel)
 }
 
 inline void
-exec_or(command_t cmd)
+exec_or(command_t cmd, int time_travel, depend_node_t dpn_list)
 {
-	execute_command(cmd->u.command[0],0);
+	execute_command(cmd->u.command[0],time_travel, dpn_list);
 	if (cmd->u.command[0]->status != 0)
 	{
-		execute_command(cmd->u.command[1],0);
+		execute_command(cmd->u.command[1],time_travel, dpn_list);
 		cmd->status = cmd->u.command[1]->status;
 	}
 	else

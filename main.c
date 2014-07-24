@@ -8,8 +8,11 @@
 #include <error.h>
 #include <getopt.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "command.h"
+#include "alloc.h"
 
 static char const *program_name;
 static char const *script_name;
@@ -34,6 +37,9 @@ main (int argc, char **argv)
   int print_tree = 0;
   int time_travel = 0;
   program_name = argv[0];
+
+  depend_node_t depend_table = checked_malloc(sizeof(struct depend_node));
+  //Dependency Table
 
   for (;;)
     switch (getopt (argc, argv, "pt"))
@@ -68,9 +74,19 @@ main (int argc, char **argv)
       else
 	{
 	  last_command = command;
-	  execute_command (command, time_travel);
+	  execute_command (command, time_travel, depend_table);
 	}
     }
-
+  /*if (0) // time_travel
+  {
+		depend_table = depend_table->nxt;
+		while (depend_table != NULL)
+		{
+			//printf("waiting on %d\n", depend_table->pid);
+			if (depend_table->pid > 0)
+				waitpid(depend_table->pid, 0,0);
+			depend_table = depend_table->nxt;
+		}
+  }*/
   return print_tree || !last_command ? 0 : command_status (last_command);
 }
