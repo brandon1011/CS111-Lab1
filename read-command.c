@@ -2,6 +2,7 @@
 	Jordi Burbano 	UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 */
+
 // UCLA CS 111 Lab 1 command reading
 #include "command.h"
 #include "command-internals.h"
@@ -282,6 +283,7 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	if (subshell && (cmd->type == SIMPLE_COMMAND))
 	{
 		/* For a multi-line simple command */
+		/*
 		char **w = cmd->u.word;
 		while(*w)
 		{
@@ -293,9 +295,24 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		memcpy(w,cmd->u.word, sizeof(void*)*(wnum));	
 		free(cmd->u.word);
 		cmd->u.word = w;
-		num_words +=wnum;
+		num_words +=wnum; */
+		char** temp = cmd->u.word;
+		cmd->type = SEQUENCE_COMMAND;
+		cmd->u.command[0] = checked_malloc(sizeof(struct command));
+		cmd->u.command[0]->status = -1;
+		cmd->u.command[0]->type = SIMPLE_COMMAND;
+		cmd->u.command[0]->u.word = temp;
+		cmd->u.command[0]->input = cmd->input;
+		cmd->u.command[0]->output = cmd->output;
+		cmd->input = NULL;
+		cmd->output = NULL;
+
+		cmd->u.command[1] = checked_malloc(sizeof(struct command));
+		cmd->u.command[1]->status = -1;
+		return make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
+			cmd->u.command[1], subshell, line_num);
 	}
-	else // For a new simple cmdBre
+	else // For a new simple cmd
 	{
 		cmd->type = SIMPLE_COMMAND;
 		cmd->u.word = checked_malloc(sizeof(void*)*num_words+1);
