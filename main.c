@@ -37,24 +37,30 @@ main (int argc, char **argv)
   int command_number = 1;
   int print_tree = 0;
   int time_travel = 0;
+  int interactive = 0;
   program_name = argv[0];
 
   depend_node_t depend_table = checked_malloc(sizeof(struct depend_node));
   //Dependency Table
 
   for (;;)
-    switch (getopt (argc, argv, "pt"))
+    switch (getopt (argc, argv, "pti"))
       {
       case 'p': print_tree = 1; break;
       case 't': time_travel = 1; break;
+		case 'i': interactive = 1; break;	// Interactive Shell
       default: usage (); break;
       case -1: goto options_exhausted;
       }
  options_exhausted:;
 
   // There must be exactly one file argument.
-  if (optind != argc - 1)
+  if (!interactive && optind != argc - 1) 
     usage ();
+  if (interactive) {
+  	 printf("Interactive Shell\n");
+	 return 0;
+  }
 
   script_name = argv[optind];
   FILE *script_stream = fopen (script_name, "r");
