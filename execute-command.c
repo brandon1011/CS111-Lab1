@@ -149,11 +149,12 @@ exec_simple(command_t cmd, int time_travel, depend_node_t dpn_list)
 {
 	FILE *fin = stdin;
 	FILE *fout = stdout;
-	if((cmd->output!=NULL || cmd->input!=NULL))
+	pid_t blocked_on = 0;
+	if(time_travel && (cmd->output!=NULL || cmd->input!=NULL))
 	{
 		dpn_list = add_dependency(cmd, dpn_list);
+		pid_t blocked_on = dpn_list->pid;
 	}
-	pid_t blocked_on = dpn_list->pid;
 
 	if (time_travel && blocked_on >0)
 	{

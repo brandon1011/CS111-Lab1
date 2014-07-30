@@ -19,7 +19,6 @@
 #include "command.h"
 #include "alloc.h"
 
-
 #define DIRLEN 256
 
 static char const *program_name;
@@ -125,9 +124,15 @@ int test_readline();
 
 int
 ishell() {
-	test_readline();
-	char *buffer = readline("");
-	free(buffer);
+	char *buffer;
+	command_t cmd;
+
+	while (strcmp((buffer=readline("")), "exit")) {
+		cmd = make_command(get_next_byte, NULL, buffer, strlen(buffer), 0, 0);
+		print_command(cmd);
+		if (buffer)
+			free(buffer);
+	}
 	return 0;
 }
 

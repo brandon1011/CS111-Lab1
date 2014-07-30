@@ -396,8 +396,10 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				pos= temp;
 			if (type==WORD)
 			{
-				if (cmd == NULL)
+				if (cmd == NULL) {
 					cmd = checked_malloc(sizeof(struct command));
+					memset(cmd, 0, sizeof(struct command));
+				}
 				pos = make_simple_cmd(get_next_byte, fp, 
 					line_buffer, len, pos, cmd, subshell, line_num);
 			}
