@@ -1,5 +1,4 @@
 /*
-	Jordi Burbano UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 */
 // UCLA CS 111 Lab 1 command interface
@@ -35,3 +34,4 @@ void execute_command (command_t, int, depend_node_t depend_list);
 /* Return the exit status of a command, which must have previously been executed.
    Wait for the command, if it is not already finished.  */
 int command_status (command_t);
+

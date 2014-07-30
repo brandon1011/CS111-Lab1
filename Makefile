@@ -4,6 +4,7 @@ CC = gcc
 CFLAGS = -g -Wall -Wextra -Wno-unused -Werror
 LAB = 1
 DISTDIR = lab1-$(USER)
+BFLAGS = -lreadline
 
 all: timetrash
 
@@ -23,7 +24,7 @@ DIST_SOURCES = \
   $(TESTS) check-dist README
 
 timetrash: $(TIMETRASH_OBJECTS)
-	$(CC) $(CFLAGS) -o $@ $(TIMETRASH_OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $(TIMETRASH_OBJECTS) $(BFLAGS)
 
 alloc.o: alloc.h
 execute-command.o main.o print-command.o read-command.o: command.h

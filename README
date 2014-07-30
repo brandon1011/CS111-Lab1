@@ -1,4 +1,3 @@
-	Jordi Burbano UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 
 ****************************************************************************
@@ -121,6 +120,7 @@ The following limitations are present within the design:
 
 1. Under some very special cases that have not been completely identified,
 syntax errors are reported at lines > than the actual line of the error.
+Most common seen in multi-line subshell commands
 
 2. When a nested subshell is used, the inner subshell command must be
 contained within a single line. For example,
@@ -140,4 +140,6 @@ contained within a single line. For example,
 	is a syntax error
 
 3. When in time_travel mode, sometimes the process will exit before all
-commands are done.
+commands are done. This happens because the parent does not wait for the
+children to exit unless the next command to be scheduled is blocked by 
+one of the previous commands.

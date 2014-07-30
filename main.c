@@ -1,5 +1,4 @@
 /*
-	Jordi Burbano UID: 204-076-325
 	Brandon Wu		UID: 603-859-458
 */
 // UCLA CS 111 Lab 1 main program
@@ -8,12 +7,20 @@
 #include <error.h>
 #include <getopt.h>
 #include <stdio.h>
+#include <dirent.h>	// readdir()
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>	// for testing if directory exists
 #include <stdlib.h>
+#include <readline/readline.h>	// for interctive subshell
+#include <readline/history.h>
 
 #include "command.h"
 #include "alloc.h"
+
+
+#define DIRLEN 256
 
 static char const *program_name;
 static char const *script_name;
@@ -29,6 +36,9 @@ get_next_byte (void *stream)
 {
   return getc (stream);
 }
+
+int
+ishell(); 
 
 int
 main (int argc, char **argv)
@@ -59,6 +69,7 @@ main (int argc, char **argv)
     usage ();
   if (interactive) {
   	 printf("Interactive Shell\n");
+	 ishell();
 	 return 0;
   }
 
@@ -102,3 +113,105 @@ main (int argc, char **argv)
   }
   return print_tree || !last_command ? 0 : command_status (last_command);
 }
+
+
+/* =================================================================
+				INTERACTIVE SUBSHELL SUBROUTINES
+	=================================================================	*/
+char** parse_path(char** list, int* len, int* pos, char* input);
+char** read_dir(char** list, int* len, int* pos, char *path);
+char** resize(char** list, int *len);
+int test_readline();
+
+int
+ishell() {
+	test_readline();
+	char *buffer = readline("");
+	free(buffer);
+	return 0;
+}
+
+int
+test_readline()
+{
+	int i;
+	int len = 1;
+	int pos = 0;
+	char** list = malloc(sizeof(char**)*len);
+
+	char* c = getenv("PATH");
+	list = parse_path(list, &len, &pos, c);
+
+	for (i=0; i<pos; ++i)
+		printf("%s\n", list[i]);
+	return 0;
+}
+
+char**
+parse_path(char** list, int* len, int* pos, char* input) {
+	/* Given $PATH as string, process each dir
+		@list	= list to store names of files in path
+		@len 	= length of buffer to store files
+		@pos	= current pos in the buffer
+		@input	= string of $PATH	*/
+	char* buffer = input;
+	int size = 0;
+	char c;
+	while ((c=*(buffer++)) && c!=':')
+		size++;
+	if (size) {
+		char* dir = malloc(size+1);
+		memcpy(dir, input, size);
+		dir[size] = '\0';
+		// Do something to dir
+		printf("%s\n", dir);
+		list = read_dir(list, len, pos, dir);
+		free(dir);
+		if (c == ':')
+			list = parse_path(list, len, pos, (input+size+1));
+	}
+	return list;
+}
+char**
+read_dir(char** list, int *len, int *pos, char *path) {
+	/*	Read contents of a directory and store each entry into
+		the list.
+		@list	= list to store entries
+		@len	= length of the list
+		@pos	= current position in list
+		@path	= string containing absolute path to explore */
+
+	// Check if path is a valid directory
+	struct stat* s = malloc(sizeof(struct stat));;
+	int err = stat(path, s);
+	if (err == -1 || !S_ISDIR(s->st_mode))
+		return list;
+	
+	// Open the directory for reading
+	DIR *dir = opendir(path);
+	struct dirent *current;
+	while ((current=readdir(dir)) != NULL) {
+		if (*pos==*len)
+			list = resize(list, len);
+		if (current->d_name[0] != '.') {
+			list[*pos] = malloc(DIRLEN);
+			memcpy(list[*pos],current->d_name, DIRLEN);
+			(*pos)++;
+		}
+	}
+	closedir(dir);
+	return list;
+}
+
+char** 
+resize(char** list, int *len) {
+	/* Double the size of the list 
+		@list = pointer to the list to double
+		@len	= current size of the list */
+	char** newlist = malloc(2*sizeof(char**)*(*len));
+	memcpy(newlist, list, sizeof(char**)*(*len));
+	free(list);
+	*len *= 2;
+	return newlist;
+}
+
