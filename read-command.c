@@ -1,6 +1,5 @@
 /*
-	Jordi Burbano 	UID: 204-076-325
-	Brandon Wu		UID: 603-859-458
+	Brandon Wu
 */
 
 // UCLA CS 111 Lab 1 command reading
@@ -287,6 +286,8 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		char** temp = cmd->u.word;
 		cmd->type = SEQUENCE_COMMAND;
 		cmd->u.command[0] = checked_malloc(sizeof(struct command));
+		memset(cmd->u.command[0], 0, sizeof (struct command));
+
 		cmd->u.command[0]->status = -1;
 		cmd->u.command[0]->type = SIMPLE_COMMAND;
 		cmd->u.command[0]->u.word = temp;
@@ -296,6 +297,8 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 		cmd->output = NULL;
 
 		cmd->u.command[1] = checked_malloc(sizeof(struct command));
+		memset(cmd->u.command[1], 0, sizeof(struct command));
+
 		cmd->u.command[1]->status = -1;
 		return make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
 			cmd->u.command[1], subshell, line_num);
@@ -306,10 +309,14 @@ make_simple_cmd(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 			Example:	( a\n b\n c) should be treated as (a; b; c) */
 		command_t tmp_cmd = cmd->u.command[1];
 		cmd->u.command[1] = checked_malloc(sizeof(struct command));
+		memset(cmd->u.command[1], 0, sizeof(struct command));
+
 		cmd->u.command[1]->type = SEQUENCE_COMMAND;
 		cmd->u.command[1]->status=-1;
 		cmd->u.command[1]->u.command[0] = tmp_cmd;
 		cmd->u.command[1]->u.command[1] = checked_malloc(sizeof(struct command));
+		memset(cmd->u.command[1]->u.command[1], 0, sizeof(struct command));	
+
 		cmd->u.command[1]->u.command[1]->status = -1;
 		return make_simple_cmd(get_next_byte, fp, line_buffer, len, pos,
 			cmd->u.command[1]->u.command[1], subshell, line_num);
@@ -414,7 +421,11 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 	
 				command_t tmp_cmd;
 				tmp_cmd = checked_malloc(sizeof(struct command));
+				memset(tmp_cmd, 0, sizeof(struct command));
+
 				tmp_cmd->u.command[1] = checked_malloc(sizeof(struct command));
+				memset(tmp_cmd->u.command[1], 0, sizeof(struct command));
+
 				tmp_cmd->status = -1;
 				
 				if((type==PIPE || type==SEMI)&&(cmd->type==AND_COMMAND ||
@@ -461,6 +472,8 @@ make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
 				if (cmd != NULL)
 					error(1,0,"%d: Non empty cmd preceding '('", *line_num);	
 				cmd = checked_malloc(sizeof(struct command));
+				memset(cmd, 0, sizeof(struct command));
+
 				cmd->status = -1;
 				cmd->type = SUBSHELL_COMMAND;
 				cmd->u.subshell_command = make_command(get_next_byte, fp,

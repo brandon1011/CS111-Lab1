@@ -1,8 +1,13 @@
-	Brandon Wu		UID: 603-859-458
+Brandon Wu		
 
 ****************************************************************************
 *										CS 111 Lab 1C						    				*
 ****************************************************************************
+DESIGN PROJECT: 
+The interactive shell is reachable by commandline option ./timetrash -i
+
+
+
 0. CONTENTS
 		1. Implementation Details	................. 11
 		2. Limitations ............................ 71

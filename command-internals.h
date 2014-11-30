@@ -1,5 +1,5 @@
 /*
-	Brandon Wu		UID: 603-859-458
+	Brandon Wu
 */
 // UCLA CS 111 Lab 1 command internals
 

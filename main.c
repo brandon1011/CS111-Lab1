@@ -1,5 +1,5 @@
 /*
-	Brandon Wu		UID: 603-859-458
+	Brandon Wu
 */
 // UCLA CS 111 Lab 1 main program
 
@@ -20,6 +20,8 @@
 #include "alloc.h"
 
 #define DIRLEN 256
+
+static unsigned SIGNAL;
 
 static char const *program_name;
 static char const *script_name;
@@ -67,7 +69,7 @@ main (int argc, char **argv)
   if (!interactive && optind != argc - 1) 
     usage ();
   if (interactive) {
-  	 printf("Interactive Shell\n");
+  	 printf("*******Interactive Shell*******\n");
 	 ishell();
 	 return 0;
   }
@@ -122,17 +124,53 @@ char** read_dir(char** list, int* len, int* pos, char *path);
 char** resize(char** list, int *len);
 int test_readline();
 
+
+int ctrl_d(int a, int b) {
+	a, b;
+	//printf("good bye\n");
+	//printf("%d\n",SIGNAL);
+	kill(SIGNAL,1);
+	return 0;
+}
+
+
 int
 ishell() {
 	char *buffer;
+	char *format = malloc(9);
+	struct stat s;
 	command_t cmd;
+	
+	rl_bind_key('x', ctrl_d);
 
-	while (strcmp((buffer=readline("")), "exit")) {
+	while (strcmp((buffer=readline("timetrash ~$")), "exit")) {
+		if (strlen(buffer) <= 0)
+			continue;
 		cmd = make_command(get_next_byte, NULL, buffer, strlen(buffer), 0, 0);
-		print_command(cmd);
+		if (cmd) {
+		pid_t pid = fork();
+		if (!pid) {
+			pid = getpid();
+			SIGNAL=pid;
+			execute_command(cmd, 0, NULL);
+		}
+		else {
+			//printf("child is %d\n", pid);
+			waitpid(pid, NULL, 0);
+			//sprintf(format, "/proc/%d", pid);
+			/*
+			while(stat(format, &s)!= 0)	
+			{
+				if (SIGNAL)
+				{
+					printf("kill\n");
+					kill(pid, 0);
+				}
+			}*/
+		}
 		if (buffer)
 			free(buffer);
-	}
+	} }
 	return 0;
 }
 

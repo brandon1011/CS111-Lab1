@@ -1,5 +1,5 @@
 /*
-	Brandon Wu		UID: 603-859-458
+	Brandon Wu
 */
 // UCLA CS 111 Lab 1 command interface
 #include <unistd.h>
@@ -34,4 +34,8 @@ void execute_command (command_t, int, depend_node_t depend_list);
 /* Return the exit status of a command, which must have previously been executed.
    Wait for the command, if it is not already finished.  */
 int command_status (command_t);
+
+/* Parse the next command not yet read from the file stream and return it */
+command_t make_command(int (*get_next_byte) (void*), void* fp, char* line_buffer,
+		int len, int* line_num, int subshell);
 
