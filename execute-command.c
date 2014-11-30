@@ -249,4 +249,3 @@ delete_command(command_t c)
 	}
 }
 
-
